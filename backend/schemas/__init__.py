@@ -20,6 +20,8 @@ from backend.schemas.prospect import (
     QualifyCandidatesRequest,
     QualifyCandidatesResponse,
     RescoreResponse,
+    ReviewProspectRequest,
+    ReviewStatus,
     ScoreBreakdown,
     ScoreFactor,
 )
@@ -70,4 +72,6 @@ __all__ = [
     "ScoreFactor",
     "ScoreBreakdown",
     "RescoreResponse",
+    "ReviewStatus",
+    "ReviewProspectRequest",
 ]

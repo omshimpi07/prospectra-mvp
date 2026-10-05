@@ -1,6 +1,7 @@
-"""Prospect domain service."""
-
+import csv
+import io
 import logging
+from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import case, select, update
@@ -111,6 +112,7 @@ class ProspectService:
         db: AsyncSession,
         workspace_id: UUID,
         qualification_status: str | None = None,
+        review_status: str | None = None,
         min_score: float | None = None,
         limit: int = 50,
         offset: int = 0,
@@ -141,11 +143,166 @@ class ProspectService:
         )
         if qualification_status:
             stmt = stmt.where(Prospect.qualification_status == qualification_status)
+        if review_status and review_status != "ALL":
+            stmt = stmt.where(Prospect.review_status == review_status)
         if min_score is not None:
             stmt = stmt.where(Prospect.priority_score >= min_score)
 
         result = await db.execute(stmt)
         return list(result.scalars().all())
+
+    @staticmethod
+    async def review_prospect(
+        db: AsyncSession,
+        workspace_id: UUID,
+        prospect_id: UUID,
+        reviewer_id: UUID,
+        review_status: str,
+        rejection_reason: str | None = None,
+        seller_note: str | None = None,
+    ) -> Prospect:
+        """Record human review decision, optional rejection reason, and seller note on a prospect."""
+        prospect = await ProspectService.get_prospect_by_id(db, workspace_id, prospect_id)
+
+        # Correction 3: If review_status = REJECTED, rejection_reason must be provided.
+        if review_status == "REJECTED":
+            if not rejection_reason or not rejection_reason.strip():
+                raise AppError(
+                    "INVALID_REVIEW_STATE",
+                    "A rejection reason must be provided when rejecting a prospect.",
+                    status_code=422,
+                )
+            prospect.rejection_reason = rejection_reason.strip()
+        else:
+            # Correction 3: When changing away from REJECTED, clear rejection_reason.
+            prospect.rejection_reason = None
+
+        prospect.review_status = review_status
+        if seller_note is not None:
+            prospect.seller_note = seller_note.strip() if seller_note.strip() else None
+
+        now = utc_now()
+        prospect.reviewed_at = now
+        prospect.reviewed_by = reviewer_id
+        prospect.updated_at = now
+
+        # Correction 3: Do NOT modify qualification_status when seller changes review_status.
+
+        await db.commit()
+        await db.refresh(prospect)
+        return prospect
+
+    @staticmethod
+    async def export_prospects_csv(
+        db: AsyncSession,
+        workspace_id: UUID,
+        review_status: str | None = "APPROVED",
+        qualification_status: str | None = None,
+        min_score: float | None = None,
+        limit: int = 1000,
+    ) -> tuple[str, str]:
+        """Export workspace prospects as an RFC 4180-compliant CSV with formula injection defense."""
+        limit = min(max(1, limit), 1000)
+
+        qual_rank = case(
+            (Prospect.qualification_status == "QUALIFIED", 1),
+            (Prospect.qualification_status == "REVIEW_NEEDED", 2),
+            (Prospect.qualification_status == "UNQUALIFIED", 3),
+            (Prospect.qualification_status == "DISQUALIFIED", 4),
+            else_=5,
+        )
+
+        stmt = (
+            select(Prospect)
+            .where(Prospect.workspace_id == workspace_id)
+            .order_by(
+                Prospect.priority_score.desc().nulls_last(),
+                qual_rank.asc(),
+                Prospect.created_at.desc(),
+                Prospect.id.asc(),
+            )
+            .limit(limit)
+        )
+
+        # Correction 6: Default export behavior should be review_status = APPROVED
+        # unless caller explicitly supplies another supported filter (or 'ALL')
+        effective_review = review_status if review_status is not None else "APPROVED"
+        if effective_review != "ALL":
+            stmt = stmt.where(Prospect.review_status == effective_review)
+
+        if qualification_status:
+            stmt = stmt.where(Prospect.qualification_status == qualification_status)
+        if min_score is not None:
+            stmt = stmt.where(Prospect.priority_score >= min_score)
+
+        res = await db.execute(stmt)
+        prospects = list(res.scalars().all())
+
+        # Formula injection defense: prepend single quote if cell starts with =, +, -, @, \t, or \r
+        def sanitize(val: Any) -> str:
+            if val is None:
+                return ""
+            s = str(val).strip()
+            if s and s[0] in ("=", "+", "-", "@", "\t", "\r"):
+                return f"'{s}"
+            return s
+
+        output = io.StringIO()
+        writer = csv.writer(output, quoting=csv.QUOTE_MINIMAL, lineterminator="\r\n")
+
+        headers = [
+            "Business Name",
+            "Canonical Category",
+            "City",
+            "Website",
+            "Priority Score",
+            "Scoring Profile",
+            "Qualification Status",
+            "Human Review Status",
+            "Core Opportunity",
+            "Public Email",
+            "Phone",
+            "Rejection Reason",
+            "Seller Note",
+            "Discovered At",
+        ]
+        writer.writerow(headers)
+
+        for p in prospects:
+            signals = p.raw_signals or {}
+            breakdown = p.score_breakdown or {}
+            emails = signals.get("public_emails") or []
+            email_str = ", ".join(emails) if isinstance(emails, list) else str(emails)
+
+            phone_val = p.phone or ""
+            if not phone_val and signals.get("public_phones"):
+                phones = signals.get("public_phones")
+                phone_str = ", ".join(phones) if isinstance(phones, list) else str(phones)
+            else:
+                phone_str = phone_val
+
+            writer.writerow(
+                [
+                    sanitize(p.name),
+                    sanitize(p.canonical_category),
+                    sanitize(p.city or ""),
+                    sanitize(p.website_url or ""),
+                    f"{p.priority_score:.2f}",
+                    sanitize(breakdown.get("scoring_profile", "")),
+                    sanitize(p.qualification_status),
+                    sanitize(p.review_status),
+                    sanitize(p.qualification_reason or ""),
+                    sanitize(email_str),
+                    sanitize(phone_str),
+                    sanitize(p.rejection_reason or ""),
+                    sanitize(p.seller_note or ""),
+                    p.created_at.strftime("%Y-%m-%d %H:%M:%S") if p.created_at else "",
+                ]
+            )
+
+        now_str = utc_now().strftime("%Y%m%d_%H%M%S")
+        filename = f"prospects_{str(workspace_id)[:8]}_{effective_review.lower()}_{now_str}.csv"
+        return output.getvalue(), filename
 
     @staticmethod
     async def rescore_workspace_prospects(

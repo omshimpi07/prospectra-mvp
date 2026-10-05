@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.auth.dependencies import require_workspace_member
@@ -15,6 +15,8 @@ from backend.schemas.prospect import (
     QualifyCandidatesRequest,
     QualifyCandidatesResponse,
     RescoreResponse,
+    ReviewProspectRequest,
+    ReviewStatus,
 )
 from backend.services.prospect import ProspectService
 
@@ -55,6 +57,9 @@ async def list_prospects(
     qualification_status: QualificationStatus | None = Query(
         default=None, description="Filter by qualification status"
     ),
+    review_status: ReviewStatus | None = Query(
+        default=None, description="Filter by human review status"
+    ),
     min_score: float | None = Query(
         default=None, ge=0.0, le=1.0, description="Minimum priority score filter"
     ),
@@ -68,6 +73,7 @@ async def list_prospects(
         db=db,
         workspace_id=workspace_id,
         qualification_status=qualification_status,
+        review_status=review_status,
         min_score=min_score,
         limit=limit,
         offset=offset,
@@ -75,7 +81,7 @@ async def list_prospects(
     return [ProspectResponse.model_validate(p) for p in prospects]
 
 
-# Static route /rescore is explicitly placed BEFORE dynamic /{prospect_id} to avoid route collision
+# Static routes /rescore and /export are explicitly placed BEFORE dynamic /{prospect_id} to avoid route collision
 @router.post(
     "/rescore",
     response_model=RescoreResponse,
@@ -91,6 +97,43 @@ async def rescore_prospects(
     return await ProspectService.rescore_workspace_prospects(
         db=db,
         workspace_id=workspace_id,
+    )
+
+
+@router.get(
+    "/export",
+    status_code=status.HTTP_200_OK,
+    summary="Export workspace prospects to RFC 4180 CSV with injection defense",
+)
+async def export_prospects(
+    workspace_id: UUID,
+    review_status: str = Query(
+        default="APPROVED",
+        description="Filter by human review status (default 'APPROVED', use 'ALL' for all)",
+    ),
+    qualification_status: QualificationStatus | None = Query(
+        default=None, description="Filter by qualification status"
+    ),
+    min_score: float | None = Query(
+        default=None, ge=0.0, le=1.0, description="Minimum priority score filter"
+    ),
+    limit: int = Query(default=1000, ge=1, le=1000, description="Max prospects to export"),
+    _member: WorkspaceMember = Depends(require_workspace_member()),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Export workspace prospects as downloadable CSV."""
+    csv_content, filename = await ProspectService.export_prospects_csv(
+        db=db,
+        workspace_id=workspace_id,
+        review_status=review_status,
+        qualification_status=qualification_status,
+        min_score=min_score,
+        limit=limit,
+    )
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
@@ -111,6 +154,32 @@ async def get_prospect(
         db=db,
         workspace_id=workspace_id,
         prospect_id=prospect_id,
+    )
+    return ProspectResponse.model_validate(prospect)
+
+
+@router.patch(
+    "/{prospect_id}/review",
+    response_model=ProspectResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Record human review decision and notes on a prospect",
+)
+async def review_prospect(
+    workspace_id: UUID,
+    prospect_id: UUID,
+    payload: ReviewProspectRequest,
+    member: WorkspaceMember = Depends(require_workspace_member()),
+    db: AsyncSession = Depends(get_db),
+) -> ProspectResponse:
+    """Update human review status, optional rejection reason, and seller note."""
+    prospect = await ProspectService.review_prospect(
+        db=db,
+        workspace_id=workspace_id,
+        prospect_id=prospect_id,
+        reviewer_id=member.user_id,
+        review_status=payload.review_status,
+        rejection_reason=payload.rejection_reason,
+        seller_note=payload.seller_note,
     )
     return ProspectResponse.model_validate(prospect)
 

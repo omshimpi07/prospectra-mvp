@@ -21,6 +21,7 @@ from backend.models.base import Base, TimestampMixin, utc_now
 
 if TYPE_CHECKING:
     from backend.models.icp import ICP
+    from backend.models.profile import Profile
     from backend.models.search import SearchResult
     from backend.models.workspace import Workspace
 
@@ -41,6 +42,10 @@ class Prospect(Base, TimestampMixin):
         CheckConstraint(
             "priority_score >= 0.0 AND priority_score <= 1.0",
             name="chk_prospect_priority_score",
+        ),
+        CheckConstraint(
+            "review_status IN ('UNREVIEWED', 'APPROVED', 'REJECTED')",
+            name="chk_prospect_review_status",
         ),
     )
 
@@ -81,6 +86,19 @@ class Prospect(Base, TimestampMixin):
     qualification_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     raw_signals: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
 
+    # Sprint 6: Human Review State
+    review_status: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="UNREVIEWED", index=True
+    )
+    rejection_reason: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    seller_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reviewed_by: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("profiles.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
     error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -93,6 +111,7 @@ class Prospect(Base, TimestampMixin):
     workspace: Mapped["Workspace"] = relationship("Workspace")
     icp: Mapped["ICP"] = relationship("ICP")
     search_result: Mapped["SearchResult | None"] = relationship("SearchResult")
+    reviewer: Mapped["Profile | None"] = relationship("Profile", foreign_keys=[reviewed_by])
     evidence: Mapped[list["QualificationEvidence"]] = relationship(
         "QualificationEvidence", back_populates="prospect", cascade="all, delete-orphan"
     )

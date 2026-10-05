@@ -4,11 +4,41 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 ProspectStatus = Literal["QUEUED", "RESEARCHING", "COMPLETED", "FAILED"]
 QualificationStatus = Literal["UNQUALIFIED", "QUALIFIED", "DISQUALIFIED", "REVIEW_NEEDED"]
+ReviewStatus = Literal["UNREVIEWED", "APPROVED", "REJECTED"]
 FactorStatus = Literal["matched", "unmatched", "unknown"]
+
+
+class ReviewProspectRequest(BaseModel):
+    """Request payload to record a human review decision on a prospect."""
+
+    review_status: ReviewStatus = Field(
+        ..., description="Human review decision: 'UNREVIEWED', 'APPROVED', or 'REJECTED'."
+    )
+    rejection_reason: str | None = Field(
+        default=None,
+        max_length=100,
+        description="Reason for rejection. Mandatory if review_status is 'REJECTED'.",
+    )
+    seller_note: str | None = Field(
+        default=None,
+        max_length=1000,
+        description="Optional qualitative note recorded by the seller.",
+    )
+
+    @model_validator(mode="after")
+    def _validate_rejection_reason(self) -> "ReviewProspectRequest":
+        if self.review_status == "REJECTED":
+            if not self.rejection_reason or not self.rejection_reason.strip():
+                raise ValueError("rejection_reason is required when review_status is 'REJECTED'.")
+            self.rejection_reason = self.rejection_reason.strip()
+        else:
+            # When changing away from REJECTED, rejection_reason is cleared to None
+            self.rejection_reason = None
+        return self
 
 
 class QualifyCandidatesRequest(BaseModel):
@@ -93,6 +123,11 @@ class ProspectResponse(BaseModel):
     scored_at: datetime | None = None
     qualification_reason: str | None = None
     raw_signals: dict[str, Any] = Field(default_factory=dict)
+    review_status: ReviewStatus = "UNREVIEWED"
+    rejection_reason: str | None = None
+    seller_note: str | None = None
+    reviewed_at: datetime | None = None
+    reviewed_by: UUID | None = None
     error_code: str | None = None
     error_message: str | None = None
     queued_at: datetime | None = None
@@ -120,6 +155,11 @@ class ProspectResponse(BaseModel):
     @classmethod
     def _default_scoring_version(cls, v: Any) -> str:
         return str(v) if v is not None else "v1.0"
+
+    @field_validator("review_status", mode="before")
+    @classmethod
+    def _default_review_status(cls, v: Any) -> str:
+        return str(v) if v is not None else "UNREVIEWED"
 
 
 class RescoreResponse(BaseModel):
