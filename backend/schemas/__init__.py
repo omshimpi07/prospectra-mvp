@@ -11,6 +11,14 @@ from backend.schemas.icp import (
     TargetSignals,
 )
 from backend.schemas.profile import ProfileResponse
+from backend.schemas.prospect import (
+    EvidenceResponse,
+    ProspectResponse,
+    ProspectStatus,
+    QualificationStatus,
+    QualifyCandidatesRequest,
+    QualifyCandidatesResponse,
+)
 from backend.schemas.search import (
     GeoBoundingBox,
     SearchCreate,
@@ -48,4 +56,10 @@ __all__ = [
     "SearchCreate",
     "SearchResponse",
     "SearchResultResponse",
+    "ProspectResponse",
+    "EvidenceResponse",
+    "QualifyCandidatesRequest",
+    "QualifyCandidatesResponse",
+    "ProspectStatus",
+    "QualificationStatus",
 ]

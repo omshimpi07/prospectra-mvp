@@ -69,6 +69,15 @@ class Settings(BaseSettings):
     SEARCH_WORKER_POLL_INTERVAL_SECONDS: float = 2.0
     SEARCH_JOB_TIMEOUT_SECONDS: float = 300.0
 
+    # Web Intelligence & Qualification Configuration (Sprint 4)
+    WEB_FETCH_TIMEOUT_SECONDS: float = 10.0
+    WEB_CONNECT_TIMEOUT_SECONDS: float = 5.0
+    WEB_MAX_RESPONSE_BYTES: int = 1048576  # 1 MB
+    WEB_MAX_REDIRECTS: int = 3
+    WEB_CONCURRENCY: int = 3
+    RESEARCH_WORKER_POLL_INTERVAL_SECONDS: float = 2.0
+    RESEARCH_JOB_TIMEOUT_SECONDS: float = 120.0
+
     @field_validator("DATABASE_URL")
     @classmethod
     def _require_psycopg_scheme(cls, value: SecretStr) -> SecretStr:

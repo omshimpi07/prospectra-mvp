@@ -107,3 +107,42 @@ def test_search_and_result_models_instantiation():
     assert result.id == res_id
     assert result.external_id == "ext-123"
     assert SearchResult.__tablename__ == "search_results"
+
+
+def test_prospect_and_evidence_models_instantiation():
+    from backend.models.prospect import Prospect, QualificationEvidence
+
+    ws_id = uuid4()
+    icp_id = uuid4()
+    prospect_id = uuid4()
+    prospect = Prospect(
+        id=prospect_id,
+        workspace_id=ws_id,
+        icp_id=icp_id,
+        name="Chai Point",
+        canonical_category="cafe",
+        city="Pune",
+        website_url="https://chaipoint.example.com",
+        status="QUEUED",
+        qualification_status="UNQUALIFIED",
+    )
+    assert prospect.id == prospect_id
+    assert prospect.name == "Chai Point"
+    assert prospect.status == "QUEUED"
+    assert prospect.qualification_status == "UNQUALIFIED"
+    assert Prospect.__tablename__ == "prospects"
+
+    ev_id = uuid4()
+    evidence = QualificationEvidence(
+        id=ev_id,
+        workspace_id=ws_id,
+        prospect_id=prospect_id,
+        signal_key="web_reachability",
+        signal_value={"reachable": True, "http_status": 200},
+        confidence=1.0,
+        source_url="https://chaipoint.example.com",
+    )
+    assert evidence.id == ev_id
+    assert evidence.signal_key == "web_reachability"
+    assert evidence.confidence == 1.0
+    assert QualificationEvidence.__tablename__ == "qualification_evidence"

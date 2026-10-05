@@ -12,6 +12,7 @@ from backend.api import (
     health_router,
     icps_router,
     profiles_router,
+    prospects_router,
     searches_router,
     workspaces_router,
 )
@@ -35,28 +36,46 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan manager."""
     settings = get_settings()
-    worker = None
+    search_worker = None
+    research_worker = None
     if settings.ENVIRONMENT != "testing" and settings.DATABASE_URL:
         try:
             from backend.database import get_session_factory
+            from backend.providers.ai import get_ai_provider
             from backend.providers.discovery import get_discovery_provider
+            from backend.providers.web.fetcher import SecureWebFetcher
+            from backend.services.research_worker import ResearchWorker
             from backend.services.search_worker import SearchWorker
 
-            provider = get_discovery_provider(settings)
-            worker = SearchWorker(
-                session_factory=get_session_factory(),
-                discovery_provider=provider,
+            session_factory = get_session_factory()
+            discovery_provider = get_discovery_provider(settings)
+            search_worker = SearchWorker(
+                session_factory=session_factory,
+                discovery_provider=discovery_provider,
                 poll_interval_seconds=settings.SEARCH_WORKER_POLL_INTERVAL_SECONDS,
                 job_timeout_seconds=settings.SEARCH_JOB_TIMEOUT_SECONDS,
             )
-            worker.start()
+            search_worker.start()
+
+            ai_provider = get_ai_provider(settings) if settings.OPENROUTER_API_KEY else None
+            fetcher = SecureWebFetcher(settings)
+            research_worker = ResearchWorker(
+                session_factory=session_factory,
+                fetcher=fetcher,
+                ai_provider=ai_provider,
+                poll_interval_seconds=settings.RESEARCH_WORKER_POLL_INTERVAL_SECONDS,
+                job_timeout_seconds=settings.RESEARCH_JOB_TIMEOUT_SECONDS,
+            )
+            research_worker.start()
         except Exception:
             pass
 
     yield
 
-    if worker:
-        await worker.stop()
+    if search_worker:
+        await search_worker.stop()
+    if research_worker:
+        await research_worker.stop()
     await dispose_engine()
 
 
@@ -92,6 +111,7 @@ def create_app() -> FastAPI:
     app.include_router(workspaces_router)
     app.include_router(icps_router)
     app.include_router(searches_router)
+    app.include_router(prospects_router)
 
     return app
 

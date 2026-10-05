@@ -15,6 +15,7 @@ from backend.models.geography import (
 )
 from backend.models.icp import ICP
 from backend.models.profile import Profile
+from backend.models.prospect import Prospect, QualificationEvidence
 from backend.models.search import Search, SearchResult
 from backend.models.workspace import Workspace, WorkspaceMember
 
@@ -32,6 +33,8 @@ __all__ = [
     "validate_and_normalize_categories",
     "Search",
     "SearchResult",
+    "Prospect",
+    "QualificationEvidence",
     "CITY_CENTROIDS",
     "get_city_centroid",
     "calculate_bounding_box",
