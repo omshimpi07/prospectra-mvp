@@ -3,8 +3,8 @@
 Settings are read from environment variables and, if present, a ``.env`` file at
 the repository root (see ``.env.example`` for the documented contract).
 
-``SUPABASE_SERVICE_ROLE_KEY`` and ``GEMINI_API_KEY`` are backend-only secrets.
-They must never be forwarded to the frontend or written to logs.
+``SUPABASE_SERVICE_ROLE_KEY``, ``SUPABASE_JWT_SECRET``, and ``GEMINI_API_KEY``
+are backend-only secrets. They must never be forwarded to the frontend or written to logs.
 """
 
 import json
@@ -41,10 +41,12 @@ class Settings(BaseSettings):
     CORS_ORIGINS: Annotated[list[str], NoDecode] = ["http://localhost:3000"]
 
     SUPABASE_URL: str | None = None
-    SUPABASE_ANON_KEY: str | None = None
+    SUPABASE_PUBLISHABLE_KEY: str | None = None
+    SUPABASE_ANON_KEY: str | None = None  # Backward compatibility fallback
 
     # Backend-only secrets.
     SUPABASE_SERVICE_ROLE_KEY: SecretStr | None = None
+    SUPABASE_JWT_SECRET: SecretStr | None = None  # Isolated legacy fallback only
     GEMINI_API_KEY: SecretStr | None = None
 
     @field_validator("DATABASE_URL")
@@ -63,6 +65,17 @@ class Settings(BaseSettings):
                 return json.loads(value)
             return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value
+
+    @property
+    def supabase_public_key(self) -> str | None:
+        return self.SUPABASE_PUBLISHABLE_KEY or self.SUPABASE_ANON_KEY
+
+    @property
+    def supabase_auth_issuer(self) -> str:
+        """Expected Supabase Auth JWT issuer."""
+        if not self.SUPABASE_URL:
+            return ""
+        return f"{self.SUPABASE_URL.rstrip('/')}/auth/v1"
 
 
 @lru_cache

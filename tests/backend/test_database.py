@@ -189,9 +189,9 @@ class _StampedExample(_LocalBase, TimestampMixin):
     id: Mapped[int] = mapped_column(primary_key=True)
 
 
-def test_base_declares_no_tables():
+def test_base_declares_models():
     assert issubclass(Base, DeclarativeBase)
-    assert Base.metadata.tables == {}
+    assert {"profiles", "workspaces", "workspace_members"}.issubset(Base.metadata.tables.keys())
 
 
 def test_utc_now_is_timezone_aware_utc():
