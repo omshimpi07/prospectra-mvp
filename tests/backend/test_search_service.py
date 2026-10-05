@@ -258,3 +258,68 @@ async def test_search_worker_stale_recovery(mock_db_session):
     recovered = await worker.recover_stale_searches()
     assert recovered == 2
     mock_db_session.commit.assert_awaited()
+
+
+@pytest.mark.anyio
+async def test_search_worker_process_batch_empty(mock_db_session):
+    mock_session_factory = MagicMock()
+    mock_session_factory.return_value.__aenter__.return_value = mock_db_session
+    mock_session_factory.return_value.__aexit__ = AsyncMock()
+
+    mock_res = MagicMock()
+    mock_res.scalars.return_value.all.return_value = []
+    mock_db_session.execute.return_value = mock_res
+
+    worker = SearchWorker(
+        session_factory=mock_session_factory,
+        discovery_provider=MockDiscoveryProvider(),
+    )
+    processed = await worker.process_next_batch()
+    assert processed == 0
+
+
+@pytest.mark.anyio
+async def test_search_worker_process_batch_fault_isolation(mock_db_session, monkeypatch):
+    search1_id = uuid4()
+    search2_id = uuid4()
+
+    mock_session_factory = MagicMock()
+    mock_session_factory.return_value.__aenter__.return_value = mock_db_session
+    mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+
+    # 1. First call to execute returns the 2 queued IDs
+    mock_res_ids = MagicMock()
+    mock_res_ids.scalars.return_value.all.return_value = [search1_id, search2_id]
+
+    # For subsequent update calls
+    mock_res_update = MagicMock()
+    mock_res_update.rowcount = 1
+
+    mock_db_session.execute.side_effect = [
+        mock_res_ids,  # Initial query for queued IDs
+        mock_res_update,  # Fallback update for search1
+    ]
+
+    executed_ids: list[object] = []
+
+    async def mock_execute_search(session, s_id, provider):
+        executed_ids.append(s_id)
+        if s_id == search1_id:
+            raise RuntimeError("Simulated unhandled search execution error")
+        return MagicMock()
+
+    monkeypatch.setattr(SearchService, "execute_search", mock_execute_search)
+
+    worker = SearchWorker(
+        session_factory=mock_session_factory,
+        discovery_provider=MockDiscoveryProvider(),
+    )
+    worker._is_running = True
+
+    processed = await worker.process_next_batch()
+
+    # Both searches were processed despite search1 raising an error
+    assert processed == 2
+    assert executed_ids == [search1_id, search2_id]
+    # Commit was called during fallback update
+    mock_db_session.commit.assert_awaited()

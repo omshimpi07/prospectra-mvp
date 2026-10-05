@@ -21,6 +21,7 @@ def test_create_workspace_service():
     data = WorkspaceCreate(name="Growth Marketers")
 
     mock_db = AsyncMock()
+    mock_db.add = MagicMock()
     # Check slug collision query returns None
     mock_check_res = MagicMock()
     mock_check_res.scalar_one_or_none.return_value = None

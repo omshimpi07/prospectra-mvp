@@ -17,7 +17,10 @@ from backend.models.workspace import Workspace, WorkspaceMember
 
 @pytest.fixture
 def mock_db():
-    return AsyncMock()
+    db = AsyncMock()
+    db.add = MagicMock()
+    db.add_all = MagicMock()
+    return db
 
 
 @pytest.fixture

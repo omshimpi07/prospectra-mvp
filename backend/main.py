@@ -1,6 +1,7 @@
 """FastAPI application factory and entry point."""
 
 from contextlib import asynccontextmanager
+import logging
 from typing import AsyncGenerator
 from uuid import uuid4
 
@@ -19,6 +20,8 @@ from backend.api import (
 from backend.config import get_settings
 from backend.database import dispose_engine
 from backend.middleware.errors import register_error_handlers
+
+logger = logging.getLogger(__name__)
 
 
 class RequestIDMiddleware(BaseHTTPMiddleware):
@@ -48,27 +51,36 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             from backend.services.search_worker import SearchWorker
 
             session_factory = get_session_factory()
-            discovery_provider = get_discovery_provider(settings)
-            search_worker = SearchWorker(
-                session_factory=session_factory,
-                discovery_provider=discovery_provider,
-                poll_interval_seconds=settings.SEARCH_WORKER_POLL_INTERVAL_SECONDS,
-                job_timeout_seconds=settings.SEARCH_JOB_TIMEOUT_SECONDS,
-            )
-            search_worker.start()
 
-            ai_provider = get_ai_provider(settings) if settings.OPENROUTER_API_KEY else None
-            fetcher = SecureWebFetcher(settings)
-            research_worker = ResearchWorker(
-                session_factory=session_factory,
-                fetcher=fetcher,
-                ai_provider=ai_provider,
-                poll_interval_seconds=settings.RESEARCH_WORKER_POLL_INTERVAL_SECONDS,
-                job_timeout_seconds=settings.RESEARCH_JOB_TIMEOUT_SECONDS,
-            )
-            research_worker.start()
-        except Exception:
-            pass
+            # Initialize and start SearchWorker
+            try:
+                discovery_provider = get_discovery_provider(settings)
+                search_worker = SearchWorker(
+                    session_factory=session_factory,
+                    discovery_provider=discovery_provider,
+                    poll_interval_seconds=settings.SEARCH_WORKER_POLL_INTERVAL_SECONDS,
+                    job_timeout_seconds=settings.SEARCH_JOB_TIMEOUT_SECONDS,
+                )
+                search_worker.start()
+            except Exception as exc:
+                logger.exception("Failed to initialize or start SearchWorker: %s", exc)
+
+            # Initialize and start ResearchWorker
+            try:
+                ai_provider = get_ai_provider(settings) if settings.OPENROUTER_API_KEY else None
+                fetcher = SecureWebFetcher(settings)
+                research_worker = ResearchWorker(
+                    session_factory=session_factory,
+                    fetcher=fetcher,
+                    ai_provider=ai_provider,
+                    poll_interval_seconds=settings.RESEARCH_WORKER_POLL_INTERVAL_SECONDS,
+                    job_timeout_seconds=settings.RESEARCH_JOB_TIMEOUT_SECONDS,
+                )
+                research_worker.start()
+            except Exception as exc:
+                logger.exception("Failed to initialize or start ResearchWorker: %s", exc)
+        except Exception as exc:
+            logger.exception("Unexpected error in background worker bootstrap: %s", exc)
 
     yield
 

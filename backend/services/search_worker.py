@@ -63,7 +63,7 @@ class SearchWorker:
             return int(count)
 
     async def process_next_batch(self, batch_size: int = 5) -> int:
-        """Poll and execute a batch of QUEUED searches."""
+        """Poll and execute a batch of QUEUED searches with job-level fault isolation."""
         queued_ids: list[Any] = []
         async with self.session_factory() as session:
             stmt = (
@@ -79,8 +79,38 @@ class SearchWorker:
             return 0
 
         for search_id in queued_ids:
-            async with self.session_factory() as session:
-                await SearchService.execute_search(session, search_id, self.discovery_provider)
+            if not self._is_running:
+                break
+            try:
+                async with self.session_factory() as session:
+                    await SearchService.execute_search(session, search_id, self.discovery_provider)
+            except Exception as exc:
+                logger.exception("Unexpected error processing search %s: %s", search_id, exc)
+                try:
+                    now = utc_now()
+                    async with self.session_factory() as session:
+                        stmt_fail = (
+                            update(Search)
+                            .where(
+                                Search.id == search_id,
+                                Search.status.in_(["RUNNING", "QUEUED"]),
+                            )
+                            .values(
+                                status="FAILED",
+                                error_code="UNEXPECTED_WORKER_ERROR",
+                                error_message=f"Unhandled worker error: {str(exc)}",
+                                finished_at=now,
+                                updated_at=now,
+                            )
+                        )
+                        await session.execute(stmt_fail)
+                        await session.commit()
+                except Exception as fallback_exc:
+                    logger.exception(
+                        "Failed to update search %s status to FAILED after error: %s",
+                        search_id,
+                        fallback_exc,
+                    )
 
         return len(queued_ids)
 
