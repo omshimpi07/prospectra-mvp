@@ -148,3 +148,152 @@ export async function downloadProspectsCsv(
   a.remove();
   window.URL.revokeObjectURL(downloadUrl);
 }
+
+export async function createWorkspace(name: string): Promise<Workspace> {
+  const headers = await getAuthHeaders();
+  const resp = await fetch(`${API_BASE_URL}/workspaces`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ name }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err?.error?.message || err?.detail?.[0]?.msg || "Failed to create workspace");
+  }
+  return resp.json();
+}
+
+export async function createICP(
+  workspaceId: string,
+  name: string,
+  rawPrompt: string
+): Promise<{ id: string; name: string; status: string }> {
+  const headers = await getAuthHeaders();
+  const resp = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/icps`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ name, raw_prompt: rawPrompt }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err?.error?.message || err?.detail?.[0]?.msg || "Failed to create targeting criteria");
+  }
+  return resp.json();
+}
+
+export async function compileICP(
+  workspaceId: string,
+  icpId: string
+): Promise<{ id: string; status: string; compiled_criteria: any }> {
+  const headers = await getAuthHeaders();
+  const resp = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/icps/${icpId}/compile`, {
+    method: "POST",
+    headers,
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err?.error?.message || err?.detail?.[0]?.msg || "Failed to compile targeting criteria");
+  }
+  return resp.json();
+}
+
+export async function approveICP(
+  workspaceId: string,
+  icpId: string
+): Promise<{ id: string; status: string }> {
+  const headers = await getAuthHeaders();
+  const resp = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/icps/${icpId}`, {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify({ status: "APPROVED" }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err?.error?.message || err?.detail?.[0]?.msg || "Failed to approve targeting criteria");
+  }
+  return resp.json();
+}
+
+export async function createSearch(
+  workspaceId: string,
+  icpId: string,
+  limit: number = 25
+): Promise<{ id: string; status: string }> {
+  const headers = await getAuthHeaders();
+  const resp = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/searches`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ icp_id: icpId, limit }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err?.error?.message || err?.detail?.[0]?.msg || "Failed to create search specification");
+  }
+  return resp.json();
+}
+
+export async function runSearch(
+  workspaceId: string,
+  searchId: string
+): Promise<{ id: string; status: string }> {
+  const headers = await getAuthHeaders();
+  const resp = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/searches/${searchId}/run`, {
+    method: "POST",
+    headers,
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err?.error?.message || err?.detail?.[0]?.msg || "Failed to start search");
+  }
+  return resp.json();
+}
+
+export async function getSearch(
+  workspaceId: string,
+  searchId: string
+): Promise<{ id: string; status: string; total_candidates: number; error_message?: string }> {
+  const headers = await getAuthHeaders();
+  const resp = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/searches/${searchId}`, {
+    headers,
+  });
+  if (!resp.ok) {
+    throw new Error(`Failed to check search status (${resp.status})`);
+  }
+  return resp.json();
+}
+
+export async function getSearchResults(
+  workspaceId: string,
+  searchId: string,
+  limit: number = 50
+): Promise<Array<{ id: string; name: string; canonical_category: string; website?: string }>> {
+  const headers = await getAuthHeaders();
+  const resp = await fetch(
+    `${API_BASE_URL}/workspaces/${workspaceId}/searches/${searchId}/results?limit=${limit}`,
+    { headers }
+  );
+  if (!resp.ok) {
+    throw new Error(`Failed to fetch search results (${resp.status})`);
+  }
+  return resp.json();
+}
+
+export async function qualifyCandidates(
+  workspaceId: string,
+  searchResultIds: string[]
+): Promise<{ queued_count: number; message: string }> {
+  const headers = await getAuthHeaders();
+  const resp = await fetch(
+    `${API_BASE_URL}/workspaces/${workspaceId}/prospects/qualify-candidates`,
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ search_result_ids: searchResultIds }),
+    }
+  );
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err?.error?.message || err?.detail?.[0]?.msg || "Failed to enqueue prospects for research");
+  }
+  return resp.json();
+}

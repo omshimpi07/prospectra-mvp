@@ -37,6 +37,14 @@ const REJECTION_REASONS = [
   { value: "OTHER", label: "Other / custom reason" },
 ];
 
+const SIGNAL_LABELS: Record<string, string> = {
+  web_reachability: "Website Reachability & HTTP Status",
+  ssl_certificate: "SSL / HTTPS Security Certificate",
+  mobile_viewport: "Mobile Optimization & Viewport",
+  cms_platform: "Content Management & Tech Stack",
+  domain_presence: "Domain & Web Presence",
+};
+
 export function ProspectDetailDrawer({
   workspaceId,
   prospect,
@@ -387,15 +395,24 @@ export function ProspectDetailDrawer({
                   Algorithmic Qualification & Opportunity
                 </h3>
               </div>
-              <span className={`text-xs px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider ${
-                prospect.qualification_status === "QUALIFIED"
-                  ? "bg-emerald-100 text-emerald-800"
-                  : prospect.qualification_status === "REVIEW_NEEDED"
-                  ? "bg-amber-100 text-amber-800"
-                  : "bg-slate-100 text-slate-700"
-              }`}>
-                {prospect.qualification_status}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className={`text-xs px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider ${
+                  prospect.qualification_status === "QUALIFIED"
+                    ? "bg-emerald-100 text-emerald-800"
+                    : prospect.qualification_status === "REVIEW_NEEDED"
+                    ? "bg-amber-100 text-amber-800"
+                    : "bg-slate-100 text-slate-700"
+                }`}>
+                  {prospect.qualification_status}
+                </span>
+                <span className="text-xs font-medium text-slate-500">
+                  {prospect.qualification_status === "QUALIFIED"
+                    ? "• Qualified Fit"
+                    : prospect.qualification_status === "REVIEW_NEEDED"
+                    ? "• Needs Human Review"
+                    : "• Not a Match"}
+                </span>
+              </div>
             </div>
 
             {/* Core Rationale */}
@@ -461,19 +478,30 @@ export function ProspectDetailDrawer({
                   <span>Loading crawler probe logs...</span>
                 </div>
               ) : evidenceList.length > 0 ? (
-                <div className="space-y-2">
+                <div className="space-y-2.5">
                   {evidenceList.map((ev) => (
-                    <div key={ev.id} className="p-3 rounded-lg border border-slate-200 bg-slate-50/50 text-xs">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="font-semibold text-slate-800">{ev.signal_key}</span>
+                    <div key={ev.id} className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 text-xs space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-slate-900">
+                          {SIGNAL_LABELS[ev.signal_key] || ev.signal_key}
+                        </span>
                         <span className="text-[10px] text-slate-400">
                           {new Date(ev.observed_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                         </span>
                       </div>
-                      {ev.snippet && <p className="text-slate-600 mb-1">{ev.snippet}</p>}
-                      <pre className="text-[10px] bg-white p-2 rounded border border-slate-100 text-slate-600 overflow-x-auto">
-                        {JSON.stringify(ev.signal_value, null, 2)}
-                      </pre>
+                      {ev.snippet && (
+                        <div className="p-2 rounded-lg bg-white border border-slate-100 text-slate-700 font-medium text-[11px]">
+                          {ev.snippet}
+                        </div>
+                      )}
+                      <details className="pt-1">
+                        <summary className="text-[10px] text-blue-600 hover:text-blue-800 cursor-pointer font-medium select-none">
+                          View Raw Probe JSON
+                        </summary>
+                        <pre className="mt-1.5 text-[10px] bg-white p-2.5 rounded-lg border border-slate-200 text-slate-600 overflow-x-auto font-mono">
+                          {JSON.stringify(ev.signal_value, null, 2)}
+                        </pre>
+                      </details>
                     </div>
                   ))}
                 </div>

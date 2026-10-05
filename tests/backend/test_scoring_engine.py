@@ -227,3 +227,29 @@ def test_unknown_signals_never_rewarded():
     ssl_factor = next(f for f in computed.factors if f.key == "ssl_gap")
     assert ssl_factor.status == "unknown"
     assert ssl_factor.impact == 0.0
+
+
+def test_web_development_scores_no_website_prospect_highly():
+    """Verify prospects with no website are awarded acute opportunity in web development profile."""
+    icp = make_test_icp(service_offering="Website Design and Development")
+    signals = {
+        "website_exists": False,
+        "reachable": None,
+        "public_emails": [],
+        "public_phones": ["+919876543210"],
+    }
+    computed = ScoringEngine.calculate_score(
+        icp=icp,
+        signals=signals,
+        canonical_category="cafe",
+        business_name="Artisan Cafe",
+        qualification_status="QUALIFIED",
+    )
+    # Total weights must sum to 1.00
+    assert round(sum(f.max_impact for f in computed.factors), 2) == 1.00
+    # No website factor should be matched and award 0.40
+    no_web_factor = next(f for f in computed.factors if f.key == "no_website_opportunity")
+    assert no_web_factor.status == "matched"
+    assert no_web_factor.impact == 0.40
+    # Overall score should be high (>= 0.65)
+    assert computed.priority_score >= 0.65

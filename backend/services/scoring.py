@@ -116,79 +116,93 @@ class ScoringEngine:
         # Profile 1: WEB_REDESIGN_MODERNIZATION (Total Max Impact: 1.00)
         # -------------------------------------------------------------
         if profile == "WEB_REDESIGN_MODERNIZATION":
-            # 1. Mobile Viewport Gap (Max: 0.25)
-            # Opportunity: Site is active but lacks mobile viewport optimization
-            mv = signals.get("mobile_viewport")
-            if mv is False:
+            website_exists = signals.get("website_exists", True)
+            if not website_exists:
+                # Opportunity: Business lacks any website presence (Max: 0.40 = 0.25 + 0.15)
                 factors.append(
                     ScoreFactor(
-                        key="mobile_gap",
-                        label="Lacks Mobile Viewport",
-                        impact=0.25,
-                        max_impact=0.25,
+                        key="no_website_opportunity",
+                        label="No Existing Website",
+                        impact=0.40,
+                        max_impact=0.40,
                         status="matched",
-                        evidence_snippet="HTML lacks <meta name='viewport'> tag; acute redesign opportunity.",
-                    )
-                )
-            elif mv is True:
-                factors.append(
-                    ScoreFactor(
-                        key="mobile_gap",
-                        label="Lacks Mobile Viewport",
-                        impact=0.0,
-                        max_impact=0.25,
-                        status="unmatched",
-                        evidence_snippet="Site already includes mobile viewport tag.",
+                        evidence_snippet="Business has no public website; prime prospect for new website development.",
                     )
                 )
             else:
-                factors.append(
-                    ScoreFactor(
-                        key="mobile_gap",
-                        label="Lacks Mobile Viewport",
-                        impact=0.0,
-                        max_impact=0.25,
-                        status="unknown",
-                        evidence_snippet="Mobile viewport could not be determined due to unread/unreachable page.",
+                # 1. Mobile Viewport Gap (Max: 0.25)
+                # Opportunity: Site is active but lacks mobile viewport optimization
+                mv = signals.get("mobile_viewport")
+                if mv is False:
+                    factors.append(
+                        ScoreFactor(
+                            key="mobile_gap",
+                            label="Lacks Mobile Viewport",
+                            impact=0.25,
+                            max_impact=0.25,
+                            status="matched",
+                            evidence_snippet="HTML lacks <meta name='viewport'> tag; acute redesign opportunity.",
+                        )
                     )
-                )
+                elif mv is True:
+                    factors.append(
+                        ScoreFactor(
+                            key="mobile_gap",
+                            label="Lacks Mobile Viewport",
+                            impact=0.0,
+                            max_impact=0.25,
+                            status="unmatched",
+                            evidence_snippet="Site already includes mobile viewport tag.",
+                        )
+                    )
+                else:
+                    factors.append(
+                        ScoreFactor(
+                            key="mobile_gap",
+                            label="Lacks Mobile Viewport",
+                            impact=0.0,
+                            max_impact=0.25,
+                            status="unknown",
+                            evidence_snippet="Mobile viewport could not be determined due to unread/unreachable page.",
+                        )
+                    )
 
-            # 2. SSL Security Gap (Max: 0.15)
-            ssl_val = signals.get("ssl_valid")
-            https_enf = signals.get("https_enforced")
-            if ssl_val is False or https_enf is False:
-                factors.append(
-                    ScoreFactor(
-                        key="ssl_gap",
-                        label="Insecure / Missing SSL",
-                        impact=0.15,
-                        max_impact=0.15,
-                        status="matched",
-                        evidence_snippet="Site lacks valid SSL certificate or does not enforce HTTPS.",
+                # 2. SSL Security Gap (Max: 0.15)
+                ssl_val = signals.get("ssl_valid")
+                https_enf = signals.get("https_enforced")
+                if ssl_val is False or https_enf is False:
+                    factors.append(
+                        ScoreFactor(
+                            key="ssl_gap",
+                            label="Insecure / Missing SSL",
+                            impact=0.15,
+                            max_impact=0.15,
+                            status="matched",
+                            evidence_snippet="Site lacks valid SSL certificate or does not enforce HTTPS.",
+                        )
                     )
-                )
-            elif ssl_val is True and https_enf is True:
-                factors.append(
-                    ScoreFactor(
-                        key="ssl_gap",
-                        label="Insecure / Missing SSL",
-                        impact=0.0,
-                        max_impact=0.15,
-                        status="unmatched",
-                        evidence_snippet="Site has valid SSL certificate with HTTPS enforced.",
+                elif ssl_val is True and https_enf is True:
+                    factors.append(
+                        ScoreFactor(
+                            key="ssl_gap",
+                            label="Insecure / Missing SSL",
+                            impact=0.0,
+                            max_impact=0.15,
+                            status="unmatched",
+                            evidence_snippet="Site has valid SSL certificate with HTTPS enforced.",
+                        )
                     )
-                )
-            else:
-                factors.append(
-                    ScoreFactor(
-                        key="ssl_gap",
-                        label="Insecure / Missing SSL",
-                        impact=0.0,
-                        max_impact=0.15,
-                        status="unknown",
-                        evidence_snippet="SSL security state could not be verified.",
+                else:
+                    factors.append(
+                        ScoreFactor(
+                            key="ssl_gap",
+                            label="Insecure / Missing SSL",
+                            impact=0.0,
+                            max_impact=0.15,
+                            status="unknown",
+                            evidence_snippet="SSL security state could not be verified.",
+                        )
                     )
-                )
 
             # 3. Category Relevance (Max: 0.20)
             if canonical_category in icp.target_categories:
@@ -271,7 +285,18 @@ class ScoringEngine:
 
             # 6. Baseline Operational Vitality (Max: 0.10)
             reachable = signals.get("reachable")
-            if reachable is True:
+            if not website_exists:
+                factors.append(
+                    ScoreFactor(
+                        key="baseline_vitality",
+                        label="Active Domain Presence",
+                        impact=0.0,
+                        max_impact=0.10,
+                        status="unmatched",
+                        evidence_snippet="No domain registered or listed for business.",
+                    )
+                )
+            elif reachable is True:
                 factors.append(
                     ScoreFactor(
                         key="baseline_vitality",

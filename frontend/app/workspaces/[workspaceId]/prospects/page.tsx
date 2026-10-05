@@ -8,6 +8,7 @@ import { Prospect, ReviewStatus, QualificationStatus } from "@/lib/types";
 import { ScoreBadge } from "@/components/ScoreBadge";
 import { ContactChannels } from "@/components/ContactChannels";
 import { ProspectDetailDrawer } from "@/components/ProspectDetailDrawer";
+import { FindProspectsModal } from "@/components/FindProspectsModal";
 import {
   Download,
   Filter,
@@ -38,6 +39,7 @@ export default function ProspectWorkspacePage() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [exporting, setExporting] = useState(false);
+  const [isFindModalOpen, setIsFindModalOpen] = useState(false);
 
   // TanStack Query for server data fetching
   const {
@@ -141,6 +143,14 @@ export default function ProspectWorkspacePage() {
 
         <div className="flex items-center gap-2">
           <button
+            onClick={() => setIsFindModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition"
+          >
+            <Search className="h-3.5 w-3.5" />
+            <span>Find Prospects</span>
+          </button>
+
+          <button
             onClick={() => refetch()}
             disabled={isFetching}
             className="p-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition"
@@ -226,9 +236,9 @@ export default function ProspectWorkspacePage() {
               className="text-xs p-1.5 rounded-lg border border-slate-200 bg-white text-slate-700"
             >
               <option value="">All Qualification Tiers</option>
-              <option value="QUALIFIED">QUALIFIED Only</option>
-              <option value="REVIEW_NEEDED">REVIEW_NEEDED Only</option>
-              <option value="UNQUALIFIED">UNQUALIFIED Only</option>
+              <option value="QUALIFIED">Qualified Fit (QUALIFIED)</option>
+              <option value="REVIEW_NEEDED">Needs Review (REVIEW_NEEDED)</option>
+              <option value="UNQUALIFIED">Not a Match (UNQUALIFIED)</option>
             </select>
 
             {(reviewFilter !== "ALL" || qualFilter || minScore !== undefined) && (
@@ -262,13 +272,40 @@ export default function ProspectWorkspacePage() {
               </button>
             </div>
           ) : filteredProspects.length === 0 ? (
-            <div className="p-16 text-center space-y-2">
-              <Building2 className="h-10 w-10 text-slate-300 mx-auto" />
-              <p className="text-sm font-bold text-slate-800">No prospects match your current criteria</p>
-              <p className="text-xs text-slate-500">
-                Try switching review status tabs or lowering the minimum opportunity score.
-              </p>
-            </div>
+            prospects.length === 0 ? (
+              <div className="p-16 text-center space-y-4 max-w-md mx-auto">
+                <div className="h-12 w-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mx-auto">
+                  <Search className="h-6 w-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">No prospects in this workspace yet</h3>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Start by discovering local businesses matching your target offering, then let Prospectra qualify and rank them.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setIsFindModalOpen(true)}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition"
+                >
+                  <Search className="h-3.5 w-3.5" />
+                  <span>Find Prospects Now</span>
+                </button>
+              </div>
+            ) : (
+              <div className="p-16 text-center space-y-2">
+                <Building2 className="h-10 w-10 text-slate-300 mx-auto" />
+                <p className="text-sm font-bold text-slate-800">No prospects match your current criteria</p>
+                <p className="text-xs text-slate-500">
+                  Try switching review status tabs or lowering the minimum opportunity score.
+                </p>
+                <button
+                  onClick={() => router.push(window.location.pathname)}
+                  className="text-xs text-blue-600 hover:underline pt-2 font-medium"
+                >
+                  Reset all filters
+                </button>
+              </div>
+            )
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
@@ -394,6 +431,17 @@ export default function ProspectWorkspacePage() {
         workspaceId={workspaceId}
         prospect={selectedProspect}
         onClose={() => updateUrlFilters({ prospectId: null })}
+      />
+
+      {/* Find Prospects Modal */}
+      <FindProspectsModal
+        workspaceId={workspaceId}
+        isOpen={isFindModalOpen}
+        onClose={() => setIsFindModalOpen(false)}
+        onProspectsCreated={() => {
+          refetch();
+          queryClient.invalidateQueries({ queryKey: ["prospects", workspaceId] });
+        }}
       />
     </div>
   );
