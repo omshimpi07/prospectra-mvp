@@ -1,0 +1,2391 @@
+# Prospect Intelligence Platform
+
+## Master Implementation Context v1 — MVP
+
+### 0. IMPORTANT INSTRUCTION TO ANTIGRAVITY
+
+You are joining an already-planned project.
+
+Your first responsibility is to **understand and preserve the approved product, workflow, architecture, scope, and engineering decisions below**.
+
+Do **not** start implementing anything yet from this document alone.
+
+Do not redesign the architecture, introduce additional infrastructure, change frameworks, add unnecessary complexity, or reinterpret the product scope.
+
+The implementation plan and individual sprint instructions will be provided separately.
+
+When a sprint is provided later, implement that sprint against this context and the actual repository state.
+
+If you discover a genuine architectural conflict or missing decision, surface it clearly rather than silently redesigning the system.
+
+---
+
+# 1. PRODUCT
+
+## Working concept
+
+A **Prospect Intelligence Platform** for people/small teams selling services to local businesses.
+
+The product helps a seller answer:
+
+> "Given what I sell, what kind of businesses should I target, which businesses actually fit that target, what evidence suggests they may need my service, and what is the best available way to contact them?"
+
+The product is **not primarily a cold-calling application**.
+
+The important problem is the work that happens before outreach:
+
+```text
+Find businesses
+→ Research them
+→ Determine relevance
+→ Identify useful signals
+→ Find legitimate contact routes
+→ Prioritize prospects
+→ Let the salesperson decide who to contact
+```
+
+The platform automates the repetitive research and prioritization work while keeping the final sales decision with the human.
+
+---
+
+# 2. MVP USER
+
+The MVP is designed for:
+
+* individual sellers
+* freelancers
+* small agencies
+* small sales teams
+
+who sell services to local businesses.
+
+Examples of services:
+
+* website development
+* SEO
+* digital marketing
+* IT services
+* automation
+* digital business services
+
+Examples of target businesses:
+
+* restaurants
+* salons
+* hotels
+* clinics
+* gyms
+* local shops
+* professional/local businesses
+
+The system must **not** be hardcoded specifically for website sellers.
+
+The seller defines:
+
+```text
+what they sell
++
+who they want to sell to
++
+where they want to sell
++
+optional qualification criteria
+```
+
+The system then evaluates businesses against that target.
+
+---
+
+# 3. CORE USER PROBLEM
+
+The salesperson's real bottleneck is not making the call.
+
+It is:
+
+> finding enough genuinely relevant prospects per hour of salesperson effort.
+
+The north-star concept is therefore:
+
+**Useful / qualified prospects per hour of salesperson effort**
+
+Not:
+
+* number of businesses scraped
+* number of records collected
+* number of AI-generated leads
+* number of websites found
+
+Quality and usefulness matter more than raw volume.
+
+---
+
+# 4. MVP OBJECTIVE
+
+The MVP should take a seller from:
+
+```text
+"I sell X to Y businesses in Z location"
+```
+
+to:
+
+```text
+A prioritized, evidence-backed, human-reviewable prospect list
+```
+
+with:
+
+* business information
+* website intelligence
+* legitimate contact routes
+* qualification results
+* evidence
+* explainable priority
+* notes/tags/status
+* CSV export
+
+The MVP ends primarily at **human-ready prospect intelligence**.
+
+The human decides what happens next.
+
+---
+
+# 5. CORE USER JOURNEY
+
+```text
+Landing
+  ↓
+Login
+  ↓
+Workspace
+  ↓
+Create Target / ICP
+  ↓
+Describe service + target businesses + geography
+  ↓
+System compiles target into structured criteria
+  ↓
+User reviews / edits criteria
+  ↓
+Run Search
+  ↓
+System processes candidates
+  ↓
+Results
+  ↓
+Review prospect list
+  ↓
+Open prospect detail
+  ↓
+Approve / Reject / Save
+  ↓
+Optional deeper research for a selected prospect
+  ↓
+Export / manually contact
+```
+
+The workflow must feel simple to the user even though the internal processing is sophisticated.
+
+Principle:
+
+> **Easy outside, sophisticated inside.**
+
+---
+
+# 6. MVP AUTOMATION WORKFLOW
+
+The primary automated pipeline is:
+
+```text
+Seller Target / ICP
+        ↓
+ICP Compilation
+        ↓
+Business Discovery
+        ↓
+Normalization
+        ↓
+Deduplication / Entity Resolution
+        ↓
+Cheap Deterministic Filtering
+        ↓
+Business Verification
+        ↓
+Website Intelligence
+        ↓
+Contact Route Discovery
+        ↓
+Evidence Collection
+        ↓
+Qualification
+        ↓
+Explainable Scoring
+        ↓
+Prioritized Prospect List
+        ↓
+Human Review
+```
+
+An optional selected-prospect research workflow is:
+
+```text
+Selected Prospect
+        ↓
+Research Request
+        ↓
+Research
+        ↓
+Verification
+        ↓
+Evidence-backed Synthesis
+        ↓
+Research Summary / Call Preparation
+```
+
+This second workflow is separate from the main search pipeline.
+
+---
+
+# 7. PRODUCT PRINCIPLES
+
+The following principles are approved and should guide implementation.
+
+### 1. Deterministic before AI
+
+Use normal software for things that can be computed reliably.
+
+### 2. AI for interpretation
+
+Use AI where semantics or natural-language reasoning are actually required.
+
+### 3. Evidence over AI confidence
+
+Every important AI-derived claim should be tied to supporting evidence.
+
+### 4. Unknown is valid
+
+Missing information should not automatically mean "No".
+
+Valid states include:
+
+```text
+MATCH
+NO_MATCH
+UNKNOWN
+PARTIAL
+```
+
+### 5. Partial results are better than total failure
+
+One failed provider call or website should not destroy an entire search.
+
+### 6. Human approval before outreach
+
+The MVP does not autonomously contact prospects.
+
+### 7. Provider-agnostic design
+
+External providers must be isolated behind interfaces/adapters.
+
+### 8. Cheap before expensive
+
+Do cheap filtering first and expensive AI processing later.
+
+### 9. Prospect score is contextual
+
+A business's score depends on the selected seller ICP.
+
+### 10. Do not make unsupported claims
+
+Never invent:
+
+* owner information
+* phone numbers
+* email addresses
+* revenue
+* business size
+* intent
+* buying probability
+* business problems
+
+Only state what evidence supports.
+
+---
+
+# 8. MVP ARCHITECTURE
+
+Use a **modular monolith**.
+
+Do not use microservices.
+
+The approved high-level architecture is:
+
+```text
+                  NEXT.JS FRONTEND
+                         │
+                         ▼
+                    FASTAPI API
+                         │
+          ┌──────────────┴──────────────┐
+          │                             │
+          ▼                             ▼
+   PostgreSQL + PostGIS             Job Worker
+          │                             │
+          │                    ┌────────┼─────────┐
+          │                    │        │         │
+          │                    ▼        ▼         ▼
+          │                Discovery Website   Search
+          │                Provider  Analyzer  Provider
+          │                    │        │         │
+          │                    └────┬───┴─────────┘
+          │                         │
+          │                         ▼
+          │                    AI Provider
+          │                         │
+          └─────────────────────────┘
+```
+
+Platform components:
+
+```text
+Frontend      → Next.js
+Backend       → FastAPI
+Database      → PostgreSQL + PostGIS
+Auth          → Supabase Auth
+Database      → Supabase PostgreSQL
+Frontend host → Vercel
+Backend host  → free/low-cost pilot environment
+Jobs          → PostgreSQL-backed job system
+```
+
+The architecture must work without requiring paid infrastructure for the MVP pilot.
+
+Do not make the system dependent on expensive infrastructure.
+
+---
+
+# 9. MVP EXTERNAL DATA PROVIDERS
+
+Initial architecture should support provider abstraction.
+
+### Business discovery
+
+Initial provider:
+
+**Overture Places**
+
+Use it through a discovery adapter.
+
+### Search / web research
+
+Initial search provider:
+
+**Tavily**
+
+Use it behind a `SearchProvider` abstraction.
+
+### AI
+
+Use an AI provider through an `AIProvider` abstraction.
+
+The initial MVP can use a suitable free-tier model/provider such as Gemini, subject to actual available quota and API behavior during implementation.
+
+The application must not be tightly coupled to one model/provider.
+
+### Website intelligence
+
+Use our own deterministic website analyzer.
+
+Do not require a paid third-party website intelligence provider for the MVP.
+
+---
+
+# 10. NO PAID DEPENDENCY FOR MVP
+
+The MVP should be designed around:
+
+```text
+open data
++
+free tiers
++
+our own software
+```
+
+There must not be a required paid API or paid SaaS subscription just to demonstrate and operate the MVP with a small number of users.
+
+Provider quotas should be tracked and guarded.
+
+The system must fail gracefully when a free-tier quota is reached.
+
+---
+
+# 11. FRONTEND RESPONSIBILITY
+
+The frontend provides:
+
+### Authentication
+
+* signup
+* login
+* logout
+* authenticated workspace
+
+### Workspace
+
+Basic workspace context and isolation.
+
+### ICP Builder
+
+User can enter natural language such as:
+
+> I sell websites and digital marketing to independent restaurants in Pune with weak digital presence.
+
+The UI shows the compiled interpretation.
+
+User can review/edit before search.
+
+### Search
+
+Create search.
+
+Show:
+
+* search status
+* progress
+* result counts
+* partial/completed/failed state
+
+### Prospect Results
+
+Show:
+
+* business name
+* category
+* location
+* website
+* contact availability
+* qualification
+* priority
+* key reasons/signals
+
+### Prospect Detail
+
+Show:
+
+* business information
+* website intelligence
+* contact routes
+* evidence
+* qualification
+* score breakdown
+* notes
+* tags
+* status
+* activity
+
+### Actions
+
+Human can:
+
+* save
+* approve
+* reject
+* add notes
+* change status
+* request deeper research
+* export CSV
+
+No automated outbound communication in the MVP.
+
+---
+
+# 12. BACKEND RESPONSIBILITY
+
+FastAPI is the application/service layer.
+
+Responsibilities:
+
+* authentication integration
+* authorization
+* workspace isolation
+* ICP management
+* search management
+* workflow orchestration
+* provider abstraction
+* business normalization
+* deduplication
+* website analysis
+* contact extraction
+* qualification
+* scoring
+* evidence management
+* prospect management
+* research runs
+* exports
+* usage tracking
+* job scheduling
+* retries
+* validation
+* security controls
+
+The backend is the source of truth.
+
+Do not place important business rules only in frontend code.
+
+---
+
+# 13. DOMAIN MODEL
+
+Core entities:
+
+```text
+User
+Workspace
+WorkspaceMember
+ICP
+Search
+SearchResult
+Business
+BusinessSourceRecord
+Prospect
+ProspectSignal
+Contact
+Evidence
+Qualification
+ResearchRun
+Activity
+Suppression
+Job
+UsageEvent
+```
+
+Relationships:
+
+```text
+User
+  ↓
+WorkspaceMember
+  ↓
+Workspace
+  ↓
+ICP
+  ↓
+Search
+  ↓
+SearchResult
+  ↓
+Prospect
+  ↓
+Business
+```
+
+A prospect can also contain:
+
+```text
+Signals
+Contacts
+Evidence
+Qualification
+ResearchRuns
+Activities
+```
+
+---
+
+# 14. BUSINESS VS PROSPECT
+
+This distinction must remain intact.
+
+A `Business` is the underlying business entity.
+
+A `Prospect` is the evaluation of that business for a specific:
+
+```text
+workspace
++
+ICP
+```
+
+Therefore:
+
+```text
+Business ≠ Prospect
+```
+
+The same business can be:
+
+* highly relevant to one seller
+* irrelevant to another seller
+* uncertain for another ICP
+
+Scoring and qualification belong to the prospect context, not as a universal truth about the business.
+
+---
+
+# 15. BUSINESS MODEL
+
+Conceptual fields:
+
+```text
+Business
+- id
+- canonical_name
+- basic_category
+- taxonomy
+- address
+- city
+- state
+- country
+- postal_code
+- latitude
+- longitude
+- website
+- operating_status
+- created_at
+- updated_at
+```
+
+---
+
+# 16. SOURCE PROVENANCE
+
+Provider records must be preserved separately.
+
+```text
+BusinessSourceRecord
+- business_id
+- provider
+- provider_record_id
+- source_reference
+- retrieved_at
+- source_version
+- confidence
+```
+
+Do not lose source identity during normalization.
+
+The system should always be able to answer:
+
+> Where did this business information come from?
+
+---
+
+# 17. ICP MODEL
+
+The ICP contains:
+
+```text
+workspace_id
+name
+seller_description
+target_description
+criteria
+version
+```
+
+The natural-language description is compiled into structured criteria.
+
+AI output must be validated before being accepted.
+
+Pipeline:
+
+```text
+User description
+      ↓
+AI compiler
+      ↓
+Structured JSON
+      ↓
+Schema validation
+      ↓
+Supported-criteria validation
+      ↓
+User review
+      ↓
+Approved ICP
+```
+
+Do not let unvalidated AI output directly control the search.
+
+---
+
+# 18. SEARCH MODEL
+
+A search belongs to a workspace and ICP.
+
+Conceptual fields:
+
+```text
+Search
+- workspace_id
+- icp_id
+- status
+- configuration
+- candidate_count
+- qualified_count
+- timestamps
+```
+
+Searches must be resumable.
+
+Searches must support:
+
+* create
+* get
+* list
+* cancel
+* retry where appropriate
+* results/progress
+
+---
+
+# 19. SEARCH RESULT
+
+A search result records the relationship between a search and prospect.
+
+Conceptual fields:
+
+```text
+SearchResult
+- search_id
+- prospect_id
+- rank
+- score_snapshot
+- qualification_snapshot
+```
+
+Store snapshots so historical search output does not unexpectedly change when later calculations change.
+
+---
+
+# 20. PROSPECT MODEL
+
+Conceptual fields:
+
+```text
+Prospect
+- workspace_id
+- business_id
+- icp_id
+- status
+- priority
+- score
+- created_at
+- updated_at
+```
+
+Prospect status flow:
+
+```text
+NEW
+ ↓
+REVIEWED
+ ↓
+APPROVED
+ ↓
+CONTACTED
+ ↓
+FOLLOW_UP
+ ↓
+INTERESTED
+ ↓
+MEETING
+ ↓
+WON / LOST
+```
+
+Possible rejection/suppression states should exist as appropriate.
+
+Activities record history instead of relying only on the current status.
+
+---
+
+# 21. PROSPECT SIGNALS
+
+A signal represents an observed or inferred characteristic relevant to qualification.
+
+Conceptual fields:
+
+```text
+ProspectSignal
+- prospect_id
+- signal_type
+- value
+- confidence
+- observed_at
+- evidence_id
+```
+
+Examples:
+
+```text
+website_exists
+website_reachable
+booking_available
+contact_route_available
+digital_presence_gap
+category_match
+geography_match
+```
+
+Do not hardcode the entire product around one signal such as "no website".
+
+---
+
+# 22. CONTACT MODEL
+
+Contacts should focus on legitimate business contact routes.
+
+Examples:
+
+* business phone
+* official business email
+* official website contact route
+* official social profile
+* public professional contact information where appropriate
+
+Conceptual fields:
+
+```text
+Contact
+- workspace_id
+- business_id
+- name
+- role
+- contact_type
+- value
+- status
+- confidence
+- source_reference
+- created_at
+- updated_at
+```
+
+The product should prefer language such as:
+
+> Best available contact route
+
+rather than promising:
+
+> Owner's personal number
+
+unless the source explicitly establishes that.
+
+---
+
+# 23. EVIDENCE MODEL
+
+Evidence is a first-class part of the system.
+
+Conceptual fields:
+
+```text
+Evidence
+- workspace_id
+- prospect_id
+- claim_type
+- claim
+- source_type
+- source_url_or_reference
+- observed_at
+- confidence
+```
+
+Every important qualification/significant AI claim should connect to evidence.
+
+Conceptual relationship:
+
+```text
+Source
+ ↓
+Evidence
+ ↓
+Signal
+ ↓
+Qualification
+ ↓
+Score
+```
+
+This is critical for trust, debugging, and user review.
+
+---
+
+# 24. QUALIFICATION
+
+Qualification is criteria-based.
+
+Example:
+
+```text
+Restaurant                  → MATCH
+Pune                        → MATCH
+Independent business        → LIKELY / PARTIAL
+Weak digital presence      → PARTIAL
+Reachable contact           → MATCH
+Website opportunity         → LIKELY
+```
+
+The output should support:
+
+```text
+MATCH
+NO_MATCH
+UNKNOWN
+PARTIAL
+```
+
+The system must not treat absence of evidence as proof of non-match unless the criteria explicitly require that.
+
+Qualification should store:
+
+```text
+result
+criteria_results
+fit_score
+problem_score
+confidence
+rules_version
+evaluated_at
+```
+
+---
+
+# 25. SCORING
+
+Scoring should be explainable.
+
+Initial conceptual dimensions:
+
+```text
+ICP fit
++
+problem/opportunity evidence
++
+business attractiveness
++
+reachability
++
+data confidence
++
+freshness
+```
+
+The exact implementation should be deterministic and versioned.
+
+Do not create a black-box score with no explanation.
+
+The UI should communicate:
+
+```text
+Priority: HIGH
+
+Reasons:
+- Strong category/geography match
+- Website has identified improvement opportunities
+- Business contact route is available
+- Evidence is reasonably fresh
+```
+
+Not simply:
+
+```text
+AI Score: 87
+```
+
+---
+
+# 26. WEBSITE ANALYZER
+
+The MVP uses an internal deterministic website analysis component.
+
+It may inspect:
+
+```text
+DNS
+HTTP/HTTPS
+redirects
+reachability
+page title
+meta description
+viewport
+canonical
+robots
+sitemap
+contact page
+phone
+email
+social links
+booking
+forms
+e-commerce signals
+basic technology signals
+```
+
+The website fetcher must be secure.
+
+The website analyzer produces raw observations.
+
+AI can then interpret those observations semantically.
+
+Example:
+
+```text
+Deterministic observations:
+website = reachable
+HTTPS = yes
+booking = yes
+contact page = no
+
+AI interpretation:
+"Website appears functional but has limited visible contact/conversion pathways."
+```
+
+Do not allow AI to invent observations not present in the collected evidence.
+
+---
+
+# 27. WEBSITE FETCH SECURITY
+
+The website fetcher must implement SSRF protections.
+
+Allow:
+
+```text
+HTTP
+HTTPS
+```
+
+Block or validate:
+
+```text
+localhost
+127.0.0.1
+private IP ranges
+internal network targets
+cloud metadata endpoints
+unsafe redirects
+unsupported protocols
+```
+
+Also enforce:
+
+* request timeout
+* response-size limits
+* redirect validation
+* safe DNS resolution
+* rate limiting
+
+External web content is untrusted input.
+
+---
+
+# 28. AI TRUST BOUNDARY
+
+Content retrieved from websites/search results is:
+
+**untrusted data**
+
+It is not an instruction.
+
+The system must protect against prompt injection.
+
+Conceptually:
+
+```text
+External webpage
+      ↓
+UNTRUSTED CONTENT
+      ↓
+AI processing
+```
+
+not:
+
+```text
+External webpage
+      ↓
+trusted instruction
+```
+
+AI should only produce structured outputs within the allowed schema.
+
+---
+
+# 29. AI PROVIDER ARCHITECTURE
+
+Use:
+
+```text
+AIProvider
+```
+
+rather than calling a specific model directly throughout the application.
+
+Conceptual operations:
+
+```text
+compile_icp()
+classify_business()
+analyze_website()
+qualify_prospect()
+summarize_research()
+```
+
+Each AI operation should have:
+
+```text
+model
+model_version
+prompt_version
+schema_version
+input
+output
+validation
+```
+
+AI output flow:
+
+```text
+LLM
+ ↓
+Structured JSON
+ ↓
+Schema/Pydantic validation
+ ↓
+Business-rule validation
+ ↓
+Evidence validation
+ ↓
+Persist
+```
+
+Never:
+
+```text
+LLM
+ ↓
+direct unrestricted database write
+```
+
+---
+
+# 30. DISCOVERY PROVIDER ARCHITECTURE
+
+Use:
+
+```text
+DiscoveryProvider
+```
+
+Initial implementation:
+
+```text
+DiscoveryProvider
+      ↓
+Overture Adapter
+      ↓
+Overture Places
+```
+
+Application/domain code should depend on the provider interface/DTOs, not raw Overture response structures.
+
+Provider-specific logic stays inside the adapter.
+
+---
+
+# 31. SEARCH PROVIDER ARCHITECTURE
+
+Use:
+
+```text
+SearchProvider
+```
+
+Initial implementation:
+
+```text
+SearchProvider
+      ↓
+Tavily Adapter
+      ↓
+Tavily
+```
+
+Again, normalize provider output into application/domain structures.
+
+Do not spread provider-specific fields across the application.
+
+---
+
+# 32. PROVIDER DTO RULE
+
+External API response:
+
+```text
+Provider Response
+```
+
+must pass through:
+
+```text
+Provider Adapter
+ ↓
+Provider DTO
+ ↓
+Normalizer
+ ↓
+Domain Model
+```
+
+Do not make the core domain dependent on external provider schemas.
+
+---
+
+# 33. AUTOMATION / JOB ARCHITECTURE
+
+The MVP should use a **PostgreSQL-backed job system**.
+
+No Redis dependency is required.
+
+No Celery dependency is required unless a later approved decision explicitly introduces it.
+
+Conceptually:
+
+```text
+FastAPI
+  ↓
+Job table
+  ↓
+Worker
+  ↓
+Job handler
+```
+
+The browser must not be responsible for keeping the workflow alive.
+
+If the browser closes, the job continues.
+
+If the backend restarts, jobs remain durable because they are stored in PostgreSQL.
+
+---
+
+# 34. JOB TYPES
+
+Expected job categories include:
+
+```text
+DISCOVER_BUSINESSES
+NORMALIZE_BUSINESS
+DEDUP_BUSINESSES
+VERIFY_WEBSITE
+EXTRACT_CONTACTS
+ANALYZE_WEBSITE
+QUALIFY_PROSPECT
+SCORE_PROSPECT
+RESEARCH_PROSPECT
+EXPORT_PROSPECTS
+```
+
+These should be handled within the modular backend rather than separate microservices.
+
+---
+
+# 35. JOB MODEL
+
+Conceptual fields:
+
+```text
+Job
+- workspace_id
+- type
+- payload
+- status
+- priority
+- attempts
+- run_after
+- locked_at
+- locked_by
+- last_error
+- created_at
+- updated_at
+```
+
+Job lifecycle:
+
+```text
+PENDING
+ ↓
+RUNNING
+ ↓
+SUCCEEDED
+```
+
+or:
+
+```text
+RUNNING
+ ↓
+FAILED
+ ↓
+RETRY
+ ↓
+RUNNING
+```
+
+Jobs must be designed to be safely repeatable.
+
+---
+
+# 36. IDEMPOTENCY
+
+A worker may crash after doing work but before marking the job as completed.
+
+Therefore operations should be idempotent.
+
+Example:
+
+Running the same website analysis twice should update/reuse the corresponding analysis result instead of generating duplicate records.
+
+Do not assume a job will execute exactly once.
+
+---
+
+# 37. PARALLEL PROCESSING
+
+Independent enrichment tasks may execute in parallel.
+
+Example:
+
+```text
+Candidate
+   ├── Website verification
+   ├── Contact extraction
+   └── Search enrichment
+            ↓
+      Qualification
+```
+
+Qualification waits for the required upstream information.
+
+Concurrency must be bounded by:
+
+* provider limits
+* AI limits
+* website safety
+* CPU/memory
+* usage budget
+
+Never create unlimited concurrent work.
+
+---
+
+# 38. SEARCH STATE MACHINE
+
+Use:
+
+```text
+CREATED
+ ↓
+QUEUED
+ ↓
+DISCOVERING
+ ↓
+NORMALIZING
+ ↓
+ENRICHING
+ ↓
+QUALIFYING
+ ↓
+SCORING
+ ↓
+COMPLETED
+```
+
+Alternative terminal/exception states:
+
+```text
+PARTIAL
+FAILED
+CANCELLED
+```
+
+A search may be `PARTIAL` when some work failed but sufficient results remain available.
+
+---
+
+# 39. PROSPECT STATE MACHINE
+
+Use:
+
+```text
+NEW
+ ↓
+REVIEWED
+ ↓
+APPROVED
+ ↓
+CONTACTED
+ ↓
+FOLLOW_UP
+ ↓
+INTERESTED
+ ↓
+MEETING
+ ↓
+WON / LOST
+```
+
+Rejected/suppressed branches should be supported.
+
+Activities record historical events.
+
+---
+
+# 40. RESEARCH RUN STATE MACHINE
+
+For optional deeper prospect research:
+
+```text
+REQUESTED
+ ↓
+QUEUED
+ ↓
+RESEARCHING
+ ↓
+VERIFYING
+ ↓
+SYNTHESIZING
+ ↓
+COMPLETED
+```
+
+Possible:
+
+```text
+PARTIAL
+FAILED
+CANCELLED
+```
+
+---
+
+# 41. RESEARCH WORKFLOW BOUNDARY
+
+Deep research is triggered only for selected prospects.
+
+It should not automatically run on every discovered business.
+
+Allowed research capabilities are narrow and controlled, such as:
+
+```text
+search public web
+inspect public website
+read existing evidence
+analyze public information
+```
+
+The research process must remain evidence-backed.
+
+Do not allow autonomous outbound actions.
+
+---
+
+# 42. OUTBOUND BOUNDARY
+
+The MVP stops before automated outreach.
+
+The system does NOT:
+
+```text
+make calls
+send WhatsApp messages
+send mass emails
+autonomously contact prospects
+negotiate with prospects
+schedule meetings automatically
+```
+
+The human controls outreach.
+
+The platform prepares information for that human.
+
+---
+
+# 43. USAGE TRACKING
+
+Track usage internally.
+
+Conceptual model:
+
+```text
+UsageEvent
+- workspace_id
+- provider
+- operation
+- units
+- estimated_cost
+- metadata
+- created_at
+```
+
+Use this to enforce:
+
+```text
+search limits
+candidate limits
+AI usage limits
+research limits
+provider request limits
+```
+
+Do not allow accidental uncontrolled provider consumption.
+
+---
+
+# 44. COST-CONTROLLED PIPELINE
+
+The automation should become progressively more expensive.
+
+```text
+Discovery
+   ↓
+Normalization
+   ↓
+Deduplication
+   ↓
+Deterministic filtering
+   ↓
+Website verification
+   ↓
+Contact/search enrichment
+   ↓
+AI analysis
+   ↓
+Optional deep research
+```
+
+Do not run expensive AI processing on every raw candidate.
+
+Example conceptual funnel:
+
+```text
+Many discovered businesses
+        ↓
+cheap filtering
+        ↓
+smaller candidate set
+        ↓
+enrichment
+        ↓
+smaller candidate set
+        ↓
+AI evaluation
+        ↓
+qualified prospects
+        ↓
+human-selected deep research
+```
+
+The exact volumes will be determined during implementation and benchmarking.
+
+---
+
+# 45. FAILURE HANDLING
+
+Failures should be isolated.
+
+Bad:
+
+```text
+One failed website
+ ↓
+Entire search fails
+```
+
+Good:
+
+```text
+One failed website
+ ↓
+Candidate marked partial/unverified
+ ↓
+Other candidates continue
+```
+
+Retry temporary failures such as:
+
+* timeout
+* temporary provider error
+* rate limit
+* temporary network issue
+
+Do not blindly retry permanent failures such as:
+
+* invalid input
+* invalid URL
+* unsupported response
+* blocked internal destination
+
+Every failure should be observable.
+
+---
+
+# 46. PARTIAL RESULTS
+
+If only some candidates can be processed, the user should still receive useful results.
+
+Example:
+
+```text
+82 prospects processed
+11 website analyses unavailable
+71 fully/partially evaluated
+```
+
+The system should expose the limitation rather than pretending everything succeeded.
+
+---
+
+# 47. TENANT ISOLATION
+
+Workspace data must remain isolated.
+
+Backend authorization and database-level policies should both be used.
+
+Conceptually:
+
+```text
+Workspace A
+   X
+Workspace B
+```
+
+A user must not be able to access another workspace's:
+
+* prospects
+* notes
+* contacts
+* evidence
+* activities
+* searches
+* usage information
+
+---
+
+# 48. DATA MINIMIZATION / PRIVACY
+
+Store only what is necessary for the product.
+
+Distinguish:
+
+```text
+business information
+```
+
+from:
+
+```text
+personal contact information
+```
+
+For contact information:
+
+* preserve source/provenance
+* avoid unnecessary personal data
+* respect suppression
+* support deletion
+* do not invent personal details
+
+---
+
+# 49. SUPPRESSION
+
+The user must be able to indicate that a business/contact should not be pursued.
+
+Conceptual model:
+
+```text
+Suppression
+- workspace_id
+- business_id / contact_id
+- reason
+- created_by
+- created_at
+```
+
+Suppressed entities must not quietly reappear as fresh outreach targets within that workspace.
+
+---
+
+# 50. EVIDENCE-FIRST UI
+
+The user should be able to inspect why a prospect was qualified.
+
+Example:
+
+```text
+WHY THIS PROSPECT?
+
+✓ Restaurant
+✓ Pune
+✓ Business website found
+✓ Contact route available
+✓ Digital opportunity detected
+
+Evidence
+→ source
+→ URL/reference
+→ observed time
+```
+
+The system should distinguish:
+
+```text
+Observed fact
+```
+
+from:
+
+```text
+AI interpretation
+```
+
+and from:
+
+```text
+Recommendation
+```
+
+Do not blur these together.
+
+---
+
+# 51. USER-FACING LANGUAGE
+
+Prefer:
+
+* Potential prospect
+* Likely fit
+* Evidence
+* Best available contact route
+* Observed signal
+* Confidence
+* Needs review
+
+Avoid unsupported promises such as:
+
+* Guaranteed lead
+* Guaranteed customer
+* Will buy
+* Owner's private number
+* Guaranteed conversion
+* AI knows this business needs your service
+
+---
+
+# 52. API BOUNDARIES
+
+Approximate API organization:
+
+```text
+/api/v1/icps
+/api/v1/searches
+/api/v1/prospects
+/api/v1/evidence
+/api/v1/exports
+/api/v1/usage
+```
+
+ICP operations:
+
+```text
+create
+list
+get
+patch
+delete
+compile
+```
+
+Search operations:
+
+```text
+create
+list
+get
+cancel
+retry
+results
+```
+
+Prospect operations:
+
+```text
+list
+get
+approve
+reject
+save
+research
+notes
+status
+```
+
+The exact request/response schemas will be finalized during implementation planning.
+
+The frontend must not depend on provider-specific API structures.
+
+---
+
+# 53. FRONTEND/BACKEND CONTRACT
+
+Frontend receives domain-level information such as:
+
+```json
+{
+  "status": "ENRICHING",
+  "progress": 62
+}
+```
+
+Do not expose internal provider details such as:
+
+```json
+{
+  "overture_request_count": 13,
+  "tavily_credit_usage": 42
+}
+```
+
+unless there is a deliberate user-facing usage feature later.
+
+Provider implementation remains a backend concern.
+
+---
+
+# 54. SEARCH PROGRESS
+
+The UI can represent stages such as:
+
+```text
+Finding businesses       ✓
+Cleaning results         ✓
+Checking digital presence …
+Finding contact routes   …
+Evaluating fit           …
+Ranking prospects        …
+```
+
+MVP can use normal polling to retrieve status.
+
+Do not introduce real-time infrastructure unless implementation requirements prove it necessary.
+
+---
+
+# 55. DATABASE PRINCIPLES
+
+PostgreSQL is the primary source of truth.
+
+PostGIS is used where geographic querying is relevant.
+
+Keep normalized canonical entities separate from provider-specific source records.
+
+Persist evidence and provenance.
+
+Version decision-producing logic.
+
+Do not add a second database unless a concrete MVP requirement justifies it.
+
+---
+
+# 56. NO UNNECESSARY INFRASTRUCTURE
+
+For this MVP, do not introduce:
+
+```text
+microservices
+Kafka
+Kubernetes
+Redis as a required service
+vector database
+Elasticsearch
+complex event bus
+distributed workflow platform
+agent swarm
+```
+
+The system should remain a maintainable modular monolith.
+
+Infrastructure should follow actual requirements.
+
+---
+
+# 57. INTERNAL MODULE STRUCTURE
+
+A reasonable internal organization is:
+
+```text
+backend/
+
+  auth/
+  workspaces/
+
+  icp/
+  searches/
+
+  discovery/
+  businesses/
+  deduplication/
+
+  website/
+  contacts/
+  enrichment/
+
+  qualification/
+  scoring/
+  evidence/
+
+  prospects/
+  activities/
+  suppression/
+
+  research/
+  exports/
+
+  jobs/
+  usage/
+
+  providers/
+      discovery/
+      search/
+      ai/
+
+  security/
+  observability/
+```
+
+The final folder structure can be adjusted slightly to fit the repository, but responsibilities should remain clearly separated.
+
+---
+
+# 58. IMPLEMENTATION STYLE
+
+Prefer:
+
+* small modules
+* explicit interfaces
+* typed DTOs
+* typed API models
+* validation
+* dependency injection where useful
+* clear service boundaries
+* testable functions
+* deterministic business logic
+* structured logging
+* meaningful error handling
+
+Avoid:
+
+* giant service classes
+* hidden global state
+* direct provider calls scattered throughout the codebase
+* business logic buried inside route handlers
+* AI output used without validation
+* duplicated domain logic
+* unnecessary abstractions created before they are needed
+
+---
+
+# 59. TESTING EXPECTATIONS
+
+Every implementation unit should include appropriate tests.
+
+Important areas:
+
+### Domain tests
+
+Qualification and scoring logic.
+
+### Provider tests
+
+Adapter parsing and normalization.
+
+### Website tests
+
+URL handling, redirects, SSRF protection, extraction logic.
+
+### Job tests
+
+Claiming, retries, idempotency, failure handling.
+
+### API tests
+
+Authorization, validation, response contracts.
+
+### Integration tests
+
+End-to-end movement through meaningful pipeline stages.
+
+---
+
+# 60. EVALUATION PLAN
+
+The product must eventually be tested against real labeled examples.
+
+### Data quality benchmark
+
+Approximately a manually verified dataset of local businesses across selected categories/geographies.
+
+Measure:
+
+* coverage
+* precision
+* duplicate rate
+* website accuracy
+* phone accuracy
+* category accuracy
+* business status accuracy
+
+### AI benchmark
+
+A labeled set of examples measuring:
+
+* ICP extraction accuracy
+* classification accuracy
+* signal accuracy
+* unsupported-claim rate
+* evidence grounding
+
+### Real-user pilot
+
+Small number of real sellers.
+
+Measure:
+
+* manual research time
+* system-assisted research time
+* prospects approved
+* prospects rejected
+* rejection reasons
+* contactability
+* later interest/meeting outcomes
+
+The north-star experiment remains:
+
+**useful prospects per hour of salesperson effort**
+
+---
+
+# 61. MVP SUCCESS CRITERIA
+
+The MVP is successful when a real user can:
+
+```text
+1. Create an account
+2. Create a workspace
+3. Describe what they sell
+4. Define their target customer
+5. Define geography
+6. Review compiled ICP criteria
+7. Run a search
+8. Receive real business candidates
+9. See normalized business information
+10. See website intelligence
+11. See legitimate contact routes where available
+12. See qualification results
+13. See evidence
+14. See explainable priority
+15. Review prospects
+16. Approve/reject/save
+17. Add notes/status
+18. Request deeper research for a selected prospect
+19. Export a prospect list
+```
+
+And this should happen without requiring a paid external SaaS dependency as a prerequisite for the pilot.
+
+---
+
+# 62. FIRST END-TO-END TECHNICAL OBJECTIVE
+
+Before adding polish, the system should eventually demonstrate this complete vertical slice:
+
+```text
+User
+ ↓
+Create ICP
+ ↓
+Create Search
+ ↓
+Discover real businesses
+ ↓
+Normalize
+ ↓
+Deduplicate
+ ↓
+Verify websites
+ ↓
+Collect business contact routes
+ ↓
+Generate evidence
+ ↓
+Qualify
+ ↓
+Score
+ ↓
+Display prospects
+```
+
+This is more important than building many isolated features.
+
+The first major engineering milestone should prove that the core pipeline actually works end-to-end.
+
+---
+
+# 63. DEFINITION OF DONE FOR IMPLEMENTATION UNITS
+
+An implementation unit is not complete merely because code exists.
+
+It should have:
+
+```text
+implementation
++
+tests
++
+type/schema validation
++
+error handling
++
+documentation where necessary
++
+local verification
+```
+
+And the acceptance criteria defined in its sprint specification must pass.
+
+Do not move to the next dependent unit with known broken interfaces.
+
+---
+
+# 64. VERIFICATION GATE
+
+After a component/unit is completed:
+
+```text
+Implementation
+ ↓
+Unit tests
+ ↓
+Integration checks where applicable
+ ↓
+Acceptance criteria
+ ↓
+Repository inspection
+ ↓
+Verification
+```
+
+Only then should dependent implementation proceed.
+
+---
+
+# 65. ANTIGRAVITY'S ROLE
+
+Antigravity is primarily the:
+
+**repository-level integration and engineering environment**
+
+Responsibilities:
+
+* inspect the actual repository
+* understand existing code
+* implement approved sprint work
+* integrate components
+* maintain project structure
+* run tests
+* verify interfaces
+* detect integration conflicts
+* keep the implementation aligned with the approved architecture
+* perform final end-to-end integration
+
+Antigravity should not independently redefine the product.
+
+---
+
+# 66. CLAUDE'S ROLE
+
+Claude will be used for smaller implementation tasks.
+
+Typical flow:
+
+```text
+Sprint
+ ↓
+Implementation Unit
+ ↓
+Claude
+ ↓
+small focused code/module
+ ↓
+tests
+ ↓
+verification
+ ↓
+Antigravity integration
+```
+
+Claude should receive the relevant architecture context and the specific implementation-unit specification rather than being asked to invent the system architecture.
+
+---
+
+# 67. SOURCE OF TRUTH
+
+The hierarchy is:
+
+```text
+Approved product/architecture decisions
+        ↓
+Sprint specification
+        ↓
+Implementation unit specification
+        ↓
+Code
+```
+
+Code should conform to the approved architecture.
+
+If code conflicts with architecture, do not silently redefine architecture.
+
+Raise the conflict for architectural review.
+
+---
+
+# 68. CHANGE CONTROL
+
+Major changes require explicit review.
+
+Examples:
+
+* new infrastructure
+* different database
+* different backend framework
+* different frontend framework
+* new external provider
+* new AI architecture
+* different workflow
+* significant domain-model change
+* new outbound automation
+* change to security boundary
+
+Do not make such changes merely because an alternative appears more sophisticated.
+
+The MVP values:
+
+```text
+correctness
+simplicity
+reliability
+cost control
+maintainability
+```
+
+over architectural complexity.
+
+---
+
+# 69. THE CORE MENTAL MODEL
+
+This system is **not**:
+
+```text
+"Give an AI agent the internet and ask it to find leads."
+```
+
+It is:
+
+```text
+Structured sales objective
+        ↓
+Reliable business discovery
+        ↓
+Data normalization
+        ↓
+Deterministic verification
+        ↓
+Evidence collection
+        ↓
+Selective AI interpretation
+        ↓
+Qualification
+        ↓
+Explainable prioritization
+        ↓
+Human decision
+```
+
+The key philosophy is:
+
+> **AI interprets; deterministic software executes.**
+
+And:
+
+> **Evidence is more important than an AI confidence number.**
+
+---
+
+# 70. FINAL MVP BOUNDARY
+
+Build only the system described in this document.
+
+The MVP is a:
+
+**free-first, evidence-backed prospect intelligence platform for service sellers targeting local businesses.**
+
+Its primary output is:
+
+> **a useful, prioritized, human-reviewable list of potential prospects with evidence and legitimate contact routes.**
+
+Do not expand the implementation beyond this boundary during sprint execution unless an explicit architecture/product decision is made.
+
+---
+
+# 71. WHAT HAPPENS NEXT
+
+This document is the baseline context.
+
+The next documents/instructions provided separately will define:
+
+```text
+Sprint 0
+Sprint 1
+Sprint 2
+...
+```
+
+and each sprint will be broken into small implementation units.
+
+For each unit, follow the specified:
+
+* objective
+* scope
+* expected files/modules
+* interfaces
+* dependencies
+* tests
+* acceptance criteria
+* verification gate
+
+Until a sprint is explicitly provided:
+
+**Understand the project. Do not start implementation merely from this context.**,,
+
+
+Read this as the canonical MVP architecture and implementation context. Do not implement yet. Wait for the sprint specification.,
+
+
+
+
+

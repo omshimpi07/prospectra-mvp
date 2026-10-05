@@ -1,0 +1,2304 @@
+# Prospectra
+
+## Architecture Specification v1
+
+### MVP — Free-First Prospect Intelligence Platform
+
+---
+
+# 1. Architecture Goal
+
+Prospectra is a prospect-intelligence system that helps service sellers discover, research, qualify, and prioritize local-business prospects.
+
+The architecture must optimize for:
+
+* simplicity
+* correctness
+* evidence
+* maintainability
+* low operating cost
+* provider independence
+* fault isolation
+* gradual extensibility
+
+The MVP should remain a **modular monolith**, not a distributed system.
+
+Core philosophy:
+
+> **Deterministic software executes. AI interprets. Humans decide.**
+
+---
+
+# 2. System Boundary
+
+Prospectra MVP begins with:
+
+```text
+Seller
+  ↓
+Sales Target / ICP
+```
+
+and ends with:
+
+```text
+Evidence-backed prioritized prospects
+  ↓
+Human review
+```
+
+Optional selected-prospect research extends the boundary to:
+
+```text
+Prospect
+  ↓
+Deep Research
+  ↓
+Research Summary / Talking Points
+```
+
+The MVP does not cross into autonomous outbound communication.
+
+---
+
+# 3. High-Level Architecture
+
+```text
+┌────────────────────────────────────────────────────────────┐
+│                         PROSPECTRA                         │
+│                                                            │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │                    NEXT.JS FRONTEND                  │  │
+│  │                                                      │  │
+│  │ Auth │ Workspace │ ICP │ Search │ Prospects │ Detail│  │
+│  └──────────────────────────┬───────────────────────────┘  │
+│                             │                              │
+│                             ▼                              │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │                      FASTAPI                         │  │
+│  │                                                      │  │
+│  │ API │ AuthZ │ Domain Services │ Validation │ Usage   │  │
+│  │      │      │ Orchestration   │ Security   │         │  │
+│  └───────────────┬────────────────────┬─────────────────┘  │
+│                  │                    │                    │
+│                  ▼                    ▼                    │
+│        ┌──────────────────┐   ┌──────────────────────┐   │
+│        │ PostgreSQL +     │   │   Background Worker  │   │
+│        │ PostGIS          │   │                      │   │
+│        │                  │   │ Job handlers         │   │
+│        │ Domain data      │   │ Retry / lease        │   │
+│        │ Evidence         │   │ Stage orchestration  │   │
+│        │ Jobs             │   │                      │   │
+│        └──────────────────┘   └───────────┬──────────┘   │
+│                                             │              │
+│              ┌──────────────────────────────┼──────────┐  │
+│              │                              │          │  │
+│              ▼                              ▼          ▼  │
+│       Discovery Provider              Search       AI     │
+│       Adapter Layer                  Adapter     Adapter  │
+│              │                              │          │  │
+│              ▼                              ▼          ▼  │
+│          Overture                        Tavily     AI    │
+│                                              Provider      │
+│                                                            │
+│       Website Analyzer / Contact / Evidence Layer         │
+│                     inside backend                        │
+└────────────────────────────────────────────────────────────┘
+```
+
+---
+
+# 4. Architectural Style
+
+## Decision
+
+Use a:
+
+**Modular Monolith + Asynchronous Job Processing**
+
+This means:
+
+* one backend application
+* one primary database
+* one worker application/process
+* clearly separated internal modules
+* explicit interfaces between major components
+* asynchronous processing for long-running workflows
+
+The backend is logically modular even though it is physically deployed as a small number of services/processes.
+
+---
+
+# 5. Why Modular Monolith
+
+Prospectra MVP does not have enough volume or organizational complexity to justify microservices.
+
+A modular monolith gives us:
+
+* simpler local development
+* easier debugging
+* fewer deployment problems
+* lower cost
+* easier transactions
+* easier schema management
+* simpler testing
+* faster iteration
+
+The code should still have clean module boundaries so that a component can later be extracted if a real requirement emerges.
+
+---
+
+# 6. Major Components
+
+Prospectra has these major logical components:
+
+```text
+1. Web Application
+2. API/Application Layer
+3. Authentication & Workspace
+4. ICP Engine
+5. Search Orchestrator
+6. Discovery Layer
+7. Business & Entity Resolution Layer
+8. Website Intelligence Layer
+9. Contact Discovery Layer
+10. Evidence Layer
+11. Qualification Engine
+12. Scoring Engine
+13. Prospect Workspace
+14. Research Engine
+15. Job System
+16. Usage / Limits
+17. Security
+18. Observability
+```
+
+---
+
+# 7. Frontend Architecture
+
+## Technology
+
+Next.js.
+
+The frontend is responsible for presentation and user interaction.
+
+It is **not** the authority for business rules.
+
+### Major frontend areas
+
+```text
+app/
+ ├── auth/
+ ├── dashboard/
+ ├── workspace/
+ ├── icps/
+ ├── searches/
+ ├── prospects/
+ ├── research/
+ └── settings/
+```
+
+The exact routing structure can be refined during implementation.
+
+---
+
+# 8. Frontend Responsibilities
+
+The frontend handles:
+
+### Authentication UI
+
+* login
+* signup
+* session state
+* logout
+
+### Workspace UI
+
+* workspace selection
+* basic workspace context
+
+### ICP UI
+
+* target description
+* service description
+* geography
+* optional filters
+* compiled criteria preview
+* edit/approve
+
+### Search UI
+
+* create search
+* progress
+* status
+* result counts
+* errors/partial state
+
+### Prospect UI
+
+* table/list
+* filters
+* sort
+* priority
+* qualification
+* save/reject/approve
+
+### Prospect detail
+
+* business information
+* website intelligence
+* contacts
+* signals
+* evidence
+* score explanation
+* notes
+* activity
+
+### Research UI
+
+* trigger research
+* research progress
+* summary
+* evidence
+* uncertainties
+* talking points
+
+### Export
+
+* request CSV
+* download generated export
+
+---
+
+# 9. Frontend Rules
+
+The frontend must:
+
+* call domain-level APIs
+* validate user-facing input
+* never contain provider-specific logic
+* never contain secret API keys
+* never directly call external providers that require server secrets
+* never determine final qualification/score independently
+* never bypass backend authorization
+
+Frontend calculations may exist for purely presentational purposes, but backend remains authoritative.
+
+---
+
+# 10. Backend Architecture
+
+FastAPI is the API/application layer.
+
+A request should generally flow as:
+
+```text
+HTTP request
+   ↓
+Router
+   ↓
+Authentication
+   ↓
+Authorization
+   ↓
+Request schema validation
+   ↓
+Application service
+   ↓
+Domain logic
+   ↓
+Repository / provider / job interaction
+   ↓
+Response schema
+```
+
+Do not put substantial business logic directly inside FastAPI route handlers.
+
+---
+
+# 11. Backend Module Structure
+
+Suggested internal structure:
+
+```text
+backend/
+│
+├── api/
+│
+├── auth/
+├── workspaces/
+│
+├── icp/
+├── searches/
+│
+├── businesses/
+├── discovery/
+├── deduplication/
+│
+├── website/
+├── contacts/
+├── enrichment/
+│
+├── evidence/
+├── qualification/
+├── scoring/
+│
+├── prospects/
+├── activities/
+├── suppression/
+│
+├── research/
+├── exports/
+│
+├── jobs/
+├── usage/
+│
+├── providers/
+│   ├── discovery/
+│   ├── search/
+│   └── ai/
+│
+├── security/
+└── observability/
+```
+
+The exact code organization may vary, but responsibilities must remain separated.
+
+---
+
+# 12. API Layer
+
+The API exposes product capabilities.
+
+Primary areas:
+
+```text
+/api/v1/auth
+/api/v1/workspaces
+/api/v1/icps
+/api/v1/searches
+/api/v1/prospects
+/api/v1/evidence
+/api/v1/research
+/api/v1/exports
+/api/v1/usage
+```
+
+The exact endpoint list and schemas will be specified before implementation of each area.
+
+---
+
+# 13. Domain Layer
+
+The domain layer owns business behavior.
+
+Important domain concepts:
+
+```text
+ICP
+Search
+Business
+Prospect
+Signal
+Evidence
+Contact
+Qualification
+ResearchRun
+Activity
+Suppression
+```
+
+Examples of domain responsibilities:
+
+```text
+compile/validate ICP
+determine prospect qualification
+calculate score
+change prospect state
+apply suppression
+determine search stage
+```
+
+External provider details do not belong in the domain layer.
+
+---
+
+# 14. Repository / Persistence Layer
+
+Database access should be isolated from application logic.
+
+Conceptually:
+
+```text
+Application Service
+       ↓
+Repository Interface
+       ↓
+Database Repository
+       ↓
+PostgreSQL
+```
+
+Avoid scattering SQL/database access throughout business logic.
+
+---
+
+# 15. PostgreSQL Architecture
+
+PostgreSQL is the primary source of truth.
+
+PostGIS is enabled for geographic functionality.
+
+Use PostgreSQL for:
+
+* application data
+* search state
+* jobs
+* evidence
+* usage tracking
+* audit/activity data
+
+No second database is required for MVP.
+
+---
+
+# 16. Database Logical Areas
+
+Tables are grouped conceptually into:
+
+### Identity / tenancy
+
+```text
+users
+workspaces
+workspace_members
+```
+
+### Targeting
+
+```text
+icps
+```
+
+### Search
+
+```text
+searches
+search_results
+```
+
+### Businesses
+
+```text
+businesses
+business_source_records
+```
+
+### Prospect intelligence
+
+```text
+prospects
+prospect_signals
+contacts
+evidence
+qualifications
+```
+
+### Sales workflow
+
+```text
+activities
+suppressions
+```
+
+### Research
+
+```text
+research_runs
+```
+
+### Infrastructure
+
+```text
+jobs
+usage_events
+```
+
+---
+
+# 17. Tenancy Model
+
+Every workspace-owned resource must be associated with a workspace where appropriate.
+
+Conceptually:
+
+```text
+User
+ ↓
+WorkspaceMember
+ ↓
+Workspace
+ ↓
+Workspace-owned resources
+```
+
+Workspace isolation must exist at:
+
+1. API authorization level
+2. Database policy level where applicable
+
+Defense in depth is required.
+
+---
+
+# 18. Business Data Model
+
+Canonical business:
+
+```text
+Business
+ ├── identity
+ ├── category
+ ├── location
+ ├── website
+ ├── operating status
+ └── timestamps
+```
+
+Example conceptual properties:
+
+```text
+canonical_name
+basic_category
+taxonomy
+address
+city
+state
+country
+postal_code
+latitude
+longitude
+website
+operating_status
+```
+
+The canonical business is provider-neutral.
+
+---
+
+# 19. Source Record Model
+
+Every imported business source record should retain provenance.
+
+```text
+Business
+   │
+   ├── Source Record A
+   ├── Source Record B
+   └── Source Record C
+```
+
+Each source record can contain:
+
+```text
+provider
+provider_record_id
+source_reference
+retrieved_at
+source_version
+confidence
+```
+
+This supports traceability and later provider comparison.
+
+---
+
+# 20. Discovery Architecture
+
+Discovery must use an abstraction:
+
+```text
+DiscoveryProvider
+```
+
+Conceptual interface:
+
+```text
+search(criteria)
+```
+
+Initial implementation:
+
+```text
+DiscoveryProvider
+      ↓
+OvertureAdapter
+      ↓
+Overture Places
+```
+
+The application must never depend directly on raw Overture response structures.
+
+---
+
+# 21. Discovery Data Flow
+
+```text
+Search criteria
+     ↓
+Discovery service
+     ↓
+DiscoveryProvider
+     ↓
+Overture adapter
+     ↓
+Raw provider response
+     ↓
+Provider DTO
+     ↓
+Normalizer
+     ↓
+Canonical Business
+```
+
+Provider failures should be captured at the adapter/service boundary.
+
+---
+
+# 22. Entity Resolution
+
+The system must normalize and deduplicate discovered businesses.
+
+Potential matching signals include:
+
+```text
+provider identity / GERS
+domain
+phone
+normalized name
+coordinates
+address
+```
+
+Conceptual flow:
+
+```text
+Candidate records
+      ↓
+Normalization
+      ↓
+Strong matching
+      ↓
+Potential duplicate groups
+      ↓
+Safe merge / retain separately
+```
+
+Do not aggressively merge ambiguous records.
+
+A false merge is worse than leaving a potential duplicate.
+
+---
+
+# 23. Geographic Architecture
+
+PostGIS should support:
+
+* coordinates
+* distance-based filtering
+* geographic bounding
+* location-aware searches
+
+The backend should convert user location criteria into structured geographic constraints before discovery.
+
+Geographic filtering should happen as early as practical.
+
+---
+
+# 24. ICP Engine
+
+The ICP Engine has two distinct responsibilities.
+
+### Interpretation
+
+Convert natural language into structured criteria.
+
+### Validation
+
+Ensure the generated criteria are:
+
+* schema-valid
+* supported
+* internally coherent
+
+Flow:
+
+```text
+User language
+    ↓
+AI Provider
+    ↓
+Structured ICP
+    ↓
+Schema validation
+    ↓
+Business-rule validation
+    ↓
+User confirmation
+```
+
+An unvalidated AI interpretation must not automatically start a search.
+
+---
+
+# 25. Search Orchestrator
+
+The Search Orchestrator owns the lifecycle of a search.
+
+It should answer:
+
+```text
+What stage is this search in?
+What work is pending?
+What work is completed?
+What should run next?
+What can run in parallel?
+When can the next stage start?
+What happens after failure?
+Is the search complete?
+```
+
+It coordinates jobs but does not contain every provider-specific operation itself.
+
+---
+
+# 26. Search Workflow
+
+Canonical workflow:
+
+```text
+CREATED
+   ↓
+QUEUED
+   ↓
+DISCOVERING
+   ↓
+NORMALIZING
+   ↓
+ENRICHING
+   ↓
+QUALIFYING
+   ↓
+SCORING
+   ↓
+COMPLETED
+```
+
+Exception states:
+
+```text
+PARTIAL
+FAILED
+CANCELLED
+```
+
+---
+
+# 27. Asynchronous Processing
+
+Search execution must be asynchronous.
+
+User action:
+
+```text
+POST /searches
+```
+
+should create:
+
+```text
+Search
++
+initial Job
+```
+
+and immediately return.
+
+The browser does not wait for the entire search.
+
+---
+
+# 28. Job System
+
+Use PostgreSQL as the durable job store.
+
+Conceptually:
+
+```text
+jobs
+  ↓
+worker
+  ↓
+handler
+```
+
+The job table is the durable source of workflow work.
+
+No Redis is required for MVP.
+
+---
+
+# 29. Job Processing
+
+Job lifecycle:
+
+```text
+PENDING
+   ↓
+RUNNING
+   ↓
+SUCCEEDED
+```
+
+or:
+
+```text
+RUNNING
+   ↓
+FAILED
+   ↓
+RETRY
+   ↓
+RUNNING
+```
+
+Jobs should use a claim/lease mechanism so multiple workers do not process the same job simultaneously.
+
+---
+
+# 30. Job Types
+
+Initial set:
+
+```text
+DISCOVER_BUSINESSES
+NORMALIZE_BUSINESS
+DEDUP_BUSINESSES
+VERIFY_WEBSITE
+EXTRACT_CONTACTS
+ANALYZE_WEBSITE
+QUALIFY_PROSPECT
+SCORE_PROSPECT
+RESEARCH_PROSPECT
+EXPORT_PROSPECTS
+```
+
+The exact payload contracts will be defined during implementation.
+
+---
+
+# 31. Job Idempotency
+
+Every job handler must be safe to retry.
+
+Examples:
+
+* repeated normalization should not create duplicate businesses
+* repeated website analysis should not create uncontrolled duplicate records
+* repeated qualification should update/version the result appropriately
+* repeated export request should not corrupt existing exports
+
+Assume jobs are **at-least-once**, not exactly-once.
+
+---
+
+# 32. Job Retry Strategy
+
+Retry temporary failures.
+
+Examples:
+
+```text
+timeout
+temporary network failure
+provider 429
+temporary provider outage
+```
+
+Do not blindly retry:
+
+```text
+invalid input
+invalid URL
+blocked private destination
+unsupported operation
+permanent provider error
+```
+
+Retry policy should include bounded attempts and delayed retry timing.
+
+---
+
+# 33. Job Failure Isolation
+
+A failed candidate should not automatically fail the entire search.
+
+Example:
+
+```text
+Candidate A → success
+Candidate B → website failed
+Candidate C → success
+Candidate D → AI unavailable
+```
+
+The search can still complete with partial candidate-level states.
+
+---
+
+# 34. Parallel Processing
+
+Independent enrichment operations may run concurrently.
+
+Example:
+
+```text
+Candidate
+   │
+   ├── Website verification
+   ├── Contact extraction
+   └── Search enrichment
+             │
+             ▼
+      Qualification
+```
+
+Concurrency must remain bounded.
+
+---
+
+# 35. Deterministic Processing Layer
+
+The deterministic layer should perform:
+
+```text
+URL validation
+DNS checks
+HTTP/HTTPS checks
+redirect handling
+website extraction
+geographic calculations
+basic filtering
+normalization
+deduplication
+simple classification
+phone/email extraction
+state transitions
+usage enforcement
+```
+
+These operations should not depend on an LLM.
+
+---
+
+# 36. Website Intelligence Layer
+
+The Website Intelligence component is responsible for public website analysis.
+
+Flow:
+
+```text
+Business.website
+       ↓
+URL validation
+       ↓
+SSRF protection
+       ↓
+Safe HTTP fetch
+       ↓
+HTML extraction
+       ↓
+Deterministic observations
+       ↓
+Optional AI interpretation
+```
+
+---
+
+# 37. Website Observations
+
+Potential observations:
+
+```text
+DNS available
+HTTP reachable
+HTTPS available
+redirect chain
+page title
+meta description
+viewport
+canonical
+robots
+sitemap
+contact page
+phone
+email
+social links
+booking
+forms
+e-commerce signals
+basic technology signals
+```
+
+The analyzer should store observations rather than only a final conclusion.
+
+---
+
+# 38. AI Website Interpretation
+
+AI receives structured/cleaned observations and relevant public text.
+
+For example:
+
+```text
+Observed:
+HTTPS = true
+booking = true
+contact page = false
+social links = true
+```
+
+AI may conclude:
+
+```text
+Website appears operational but has limited visible contact/conversion pathways.
+```
+
+The system must be able to trace the conclusion back to evidence.
+
+---
+
+# 39. Contact Discovery Layer
+
+MVP focuses on legitimate contact routes.
+
+Priority:
+
+```text
+business phone
+official email
+official website contact route
+official social profile
+public professional contact where appropriate
+```
+
+Each contact stores provenance and confidence.
+
+Do not treat inferred or guessed contact information as verified.
+
+---
+
+# 40. Evidence Architecture
+
+Evidence is a first-class object.
+
+Important claims should point to evidence.
+
+Conceptually:
+
+```text
+Source
+  ↓
+Evidence
+  ↓
+Signal
+  ↓
+Qualification
+  ↓
+Score
+```
+
+Evidence should contain:
+
+```text
+claim
+claim_type
+source_type
+source_reference / URL
+observed_at
+confidence
+```
+
+---
+
+# 41. Fact vs Interpretation
+
+The system must distinguish:
+
+### Observed fact
+
+```text
+Website has a booking page.
+```
+
+### AI interpretation
+
+```text
+Website may have limited conversion optimization.
+```
+
+### Recommendation
+
+```text
+Potential website/marketing discussion point.
+```
+
+These are not equivalent.
+
+Store/display them distinctly.
+
+---
+
+# 42. Qualification Engine
+
+Qualification compares prospect evidence against the ICP.
+
+Input:
+
+```text
+ICP
++
+Business
++
+Signals
++
+Evidence
+```
+
+Output:
+
+```text
+qualification result
+criteria results
+fit score
+problem score
+confidence
+rules version
+evaluated_at
+```
+
+Possible per-criterion states:
+
+```text
+MATCH
+NO_MATCH
+UNKNOWN
+PARTIAL
+```
+
+---
+
+# 43. Scoring Engine
+
+Scoring should be deterministic and explainable for MVP.
+
+Conceptual dimensions:
+
+```text
+ICP Fit
+Problem / Opportunity Evidence
+Business Attractiveness
+Reachability
+Data Confidence
+Freshness
+```
+
+Output:
+
+```text
+score
+priority
+reasons
+score version
+```
+
+The score must be reproducible from stored evidence and rule/model versions.
+
+---
+
+# 44. Prospect Creation
+
+A business becomes a prospect when evaluated in the workspace + ICP context.
+
+```text
+Business
+ +
+Workspace
+ +
+ICP
+ ↓
+Prospect
+```
+
+Prospect stores the contextual sales state.
+
+This prevents global assumptions about whether a business is universally "good".
+
+---
+
+# 45. Prospect Workspace
+
+The Prospect Workspace is the primary user-facing sales-research area.
+
+It should support:
+
+```text
+list
+filter
+sort
+save
+approve
+reject
+suppress
+notes
+tags
+status
+evidence
+research
+activity
+```
+
+---
+
+# 46. Prospect Status
+
+Initial lifecycle:
+
+```text
+NEW
+ ↓
+REVIEWED
+ ↓
+APPROVED
+ ↓
+CONTACTED
+ ↓
+FOLLOW_UP
+ ↓
+INTERESTED
+ ↓
+MEETING
+ ↓
+WON / LOST
+```
+
+Status is not the same as qualification score.
+
+Activities preserve history.
+
+---
+
+# 47. Suppression Architecture
+
+Suppression belongs to workspace-level sales workflow.
+
+A suppression may apply to:
+
+```text
+business
+or
+contact
+```
+
+Suppressed entities must not silently re-enter the active prospect workflow.
+
+---
+
+# 48. Research Engine
+
+Deep research is optional.
+
+It is triggered explicitly on selected prospects.
+
+Workflow:
+
+```text
+Research Request
+      ↓
+Research Job
+      ↓
+Public Search / Website
+      ↓
+Existing Evidence
+      ↓
+Verification
+      ↓
+Synthesis
+      ↓
+Research Result
+```
+
+Research should build on existing data before making additional expensive searches.
+
+---
+
+# 49. AI Research Boundary
+
+Research AI may:
+
+```text
+search public web
+inspect public websites
+read stored evidence
+summarize information
+identify relevant public signals
+generate talking points
+```
+
+It should not:
+
+```text
+send email
+send WhatsApp
+make calls
+execute arbitrary code
+query arbitrary database tables
+access secrets
+perform unrestricted system actions
+```
+
+---
+
+# 50. AI Provider Architecture
+
+Use:
+
+```text
+AIProvider
+```
+
+Conceptual operations:
+
+```text
+compile_icp
+classify_business
+analyze_website
+qualify_prospect
+summarize_research
+```
+
+The application depends on the interface.
+
+Provider implementation is isolated.
+
+---
+
+# 51. Structured AI Output
+
+Every AI operation should use structured output.
+
+Flow:
+
+```text
+Prompt
+ ↓
+LLM
+ ↓
+JSON
+ ↓
+Schema validation
+ ↓
+Business-rule validation
+ ↓
+Evidence validation
+ ↓
+Persist
+```
+
+Do not trust free-form text as an API contract.
+
+---
+
+# 52. AI Versioning
+
+For decision-producing AI calls, retain:
+
+```text
+model
+model_version
+prompt_version
+schema_version
+```
+
+This lets us reproduce and debug decisions later.
+
+---
+
+# 53. External Provider Boundary
+
+All external providers must be wrapped with adapters.
+
+Pattern:
+
+```text
+Core Application
+       ↓
+Provider Interface
+       ↓
+Adapter
+       ↓
+External Provider
+```
+
+Initial adapters:
+
+```text
+OvertureAdapter
+TavilyAdapter
+AIProviderAdapter
+```
+
+The rest of the application should not contain raw provider API logic.
+
+---
+
+# 54. Configuration Boundary
+
+Provider API keys and secrets must be backend-only.
+
+Use environment/configuration management.
+
+Frontend must never receive provider secrets.
+
+Provider-specific configuration should remain isolated and configurable.
+
+---
+
+# 55. Security Architecture
+
+Security must be built into the architecture, not added after MVP coding.
+
+Major security areas:
+
+```text
+tenant isolation
+authentication
+authorization
+secret protection
+SSRF protection
+prompt injection boundaries
+rate limiting
+input validation
+job isolation
+audit/activity logging
+data minimization
+```
+
+---
+
+# 56. SSRF Protection
+
+Website fetching is one of the largest technical security risks.
+
+Allowed:
+
+```text
+HTTP
+HTTPS
+```
+
+Must protect against:
+
+```text
+localhost
+loopback
+private IPs
+internal networks
+cloud metadata addresses
+unsafe redirect targets
+non-http protocols
+```
+
+Also require:
+
+```text
+timeouts
+response-size limits
+redirect validation
+DNS validation
+```
+
+---
+
+# 57. Prompt Injection Protection
+
+Website/search content is external untrusted data.
+
+Architecture:
+
+```text
+External Content
+      ↓
+Untrusted Input Boundary
+      ↓
+Sanitization / Structuring
+      ↓
+AI
+```
+
+Never instruct the model to treat arbitrary webpage text as trusted system instructions.
+
+---
+
+# 58. Authorization Flow
+
+For every protected request:
+
+```text
+Request
+ ↓
+Authenticated identity
+ ↓
+Workspace membership lookup
+ ↓
+Authorization
+ ↓
+Resource ownership check
+ ↓
+Business logic
+```
+
+Do not trust workspace IDs supplied by clients without verifying membership.
+
+---
+
+# 59. Rate Limiting
+
+Protect:
+
+```text
+API
+search creation
+website fetching
+provider APIs
+AI calls
+deep research
+exports
+```
+
+Limits should exist at least at the workspace/user level where necessary.
+
+---
+
+# 60. Usage / Cost Control
+
+Track:
+
+```text
+provider
+operation
+units
+estimated cost
+workspace
+timestamp
+```
+
+Enforce practical limits such as:
+
+```text
+max candidates per search
+max expensive AI analyses
+max research requests
+max concurrent work
+```
+
+The exact values should be configurable.
+
+---
+
+# 61. Observability Architecture
+
+Every important operation should be observable.
+
+At minimum:
+
+```text
+structured logs
+job status
+job errors
+provider errors
+search progress
+AI calls
+processing duration
+candidate counts
+qualification counts
+usage
+```
+
+Important correlation identifiers:
+
+```text
+request_id
+search_id
+job_id
+prospect_id
+research_run_id
+workspace_id
+```
+
+This lets us trace:
+
+```text
+User search
+ → jobs
+ → provider calls
+ → evidence
+ → qualification
+ → score
+```
+
+---
+
+# 62. Search Progress Architecture
+
+The backend maintains search state.
+
+The frontend can initially poll:
+
+```text
+GET /api/v1/searches/{search_id}
+```
+
+Response contains domain-level state:
+
+```text
+status
+progress
+candidate_count
+qualified_count
+errors
+```
+
+No real-time infrastructure is required for MVP.
+
+---
+
+# 63. Deployment Architecture
+
+MVP deployment should remain simple.
+
+Conceptually:
+
+```text
+                    Internet
+                       │
+          ┌────────────┴────────────┐
+          ▼                         ▼
+       Vercel                    Backend Host
+      Next.js                    FastAPI + Worker
+                                      │
+                                      ▼
+                                Supabase
+                              PostgreSQL +
+                                PostGIS
+```
+
+Authentication can use Supabase Auth.
+
+The exact backend hosting provider may be selected during setup according to current free-tier availability.
+
+---
+
+# 64. Process Model
+
+The MVP can use:
+
+```text
+Frontend process
+Backend API process
+Worker process
+```
+
+The backend API and worker can initially share the same codebase.
+
+They differ by execution role.
+
+```text
+same repository
+     ├── API runtime
+     └── Worker runtime
+```
+
+---
+
+# 65. Request vs Background Work
+
+### Synchronous
+
+Use HTTP request/response for:
+
+```text
+login/session operations
+basic CRUD
+search creation
+status retrieval
+prospect updates
+notes
+approval/rejection
+filters
+```
+
+### Asynchronous
+
+Use jobs for:
+
+```text
+business discovery
+website verification
+website analysis
+contact discovery
+AI qualification
+large exports
+deep research
+long-running searches
+```
+
+---
+
+# 66. Data Flow — Complete Search
+
+The canonical end-to-end flow is:
+
+```text
+User
+ ↓
+Create ICP
+ ↓
+ICP compilation
+ ↓
+ICP validation
+ ↓
+User approval
+ ↓
+Create Search
+ ↓
+Create discovery job
+ ↓
+Discovery provider
+ ↓
+Provider DTO
+ ↓
+Business normalization
+ ↓
+Entity resolution
+ ↓
+Cheap filtering
+ ↓
+Enrichment jobs
+ ├── website verification
+ ├── website extraction
+ └── contact discovery
+ ↓
+Evidence creation
+ ↓
+Qualification
+ ↓
+Scoring
+ ↓
+SearchResult snapshot
+ ↓
+Prospect Workspace
+ ↓
+Human review
+```
+
+---
+
+# 67. Data Ownership Principle
+
+Each module owns its business concepts.
+
+Examples:
+
+```text
+ICP module
+→ ICP state/logic
+
+Search module
+→ Search lifecycle
+
+Business module
+→ Business data
+
+Evidence module
+→ Evidence
+
+Qualification module
+→ Qualification
+
+Scoring module
+→ Score
+
+Prospect module
+→ Sales state
+```
+
+Other modules should interact through defined interfaces rather than manipulating another module's internal structures casually.
+
+---
+
+# 68. Transaction Boundary Principle
+
+Use database transactions for small atomic domain operations.
+
+Examples:
+
+```text
+create prospect
+update prospect state
+record activity
+save suppression
+persist qualification result
+```
+
+Do not keep database transactions open while waiting for external providers or LLMs.
+
+External calls happen outside long-running DB transactions.
+
+---
+
+# 69. External Call Boundary
+
+Bad:
+
+```text
+open DB transaction
+  ↓
+call website
+  ↓
+wait
+  ↓
+call AI
+  ↓
+wait
+  ↓
+commit
+```
+
+Good:
+
+```text
+read state
+ ↓
+external call
+ ↓
+validate result
+ ↓
+short DB transaction
+ ↓
+persist
+```
+
+This avoids locking database resources during slow network operations.
+
+---
+
+# 70. Caching Philosophy
+
+For MVP, do not build a large distributed caching architecture.
+
+Prefer:
+
+* persisted canonical data
+* persisted evidence
+* idempotent analysis results
+* appropriate reuse of existing stored information
+
+Caching should only be added when a demonstrated performance/cost problem exists.
+
+---
+
+# 71. Data Freshness
+
+Business information changes.
+
+Therefore source/evidence records should include timestamps.
+
+Conceptually:
+
+```text
+observed_at
+retrieved_at
+updated_at
+```
+
+Scoring can consider freshness.
+
+The system should avoid presenting stale information as if it were newly verified.
+
+---
+
+# 72. Result Snapshotting
+
+A search result should preserve the result state at the time of the search.
+
+Therefore:
+
+```text
+SearchResult
+ ├── rank
+ ├── score_snapshot
+ └── qualification_snapshot
+```
+
+Later score changes should not unexpectedly rewrite historical search output.
+
+---
+
+# 73. Versioned Decisions
+
+The following should be versioned:
+
+```text
+ICP
+qualification rules
+scoring rules
+AI model
+AI prompt
+AI schema
+```
+
+This is necessary for reproducibility.
+
+---
+
+# 74. Cost-Aware Execution Strategy
+
+The workflow should be a funnel.
+
+```text
+                 HIGH VOLUME
+                     │
+                Discovery
+                     ↓
+                Normalize
+                     ↓
+                Deduplicate
+                     ↓
+                Cheap Filter
+                     ↓
+                Verification
+                     ↓
+                Enrichment
+                     ↓
+                 AI Analysis
+                     ↓
+                Qualification
+                     ↓
+                  Scoring
+                     ↓
+              HUMAN SELECTION
+                     ↓
+               Deep Research
+                 LOW VOLUME
+```
+
+This is one of the most important architectural characteristics of Prospectra.
+
+---
+
+# 75. Core Design Principle: Progressive Intelligence
+
+Prospectra should progressively increase intelligence and cost.
+
+```text
+Layer 1 — Raw discovery
+Layer 2 — Data quality
+Layer 3 — Deterministic signals
+Layer 4 — Semantic AI interpretation
+Layer 5 — Qualification
+Layer 6 — Explainable prioritization
+Layer 7 — Human-directed research
+```
+
+Do not jump directly to the most expensive layer.
+
+---
+
+# 76. API → Application → Domain → Infrastructure
+
+The logical dependency direction should be:
+
+```text
+API
+ ↓
+Application services
+ ↓
+Domain logic
+ ↓
+Interfaces
+ ↓
+Infrastructure adapters
+```
+
+Infrastructure should implement the interfaces required by the application.
+
+This helps keep business logic provider-independent.
+
+---
+
+# 77. Dependency Direction
+
+Conceptually:
+
+```text
+┌────────────────────────────┐
+│ Presentation / API         │
+└─────────────┬──────────────┘
+              ↓
+┌────────────────────────────┐
+│ Application Services       │
+└─────────────┬──────────────┘
+              ↓
+┌────────────────────────────┐
+│ Domain                     │
+└─────────────┬──────────────┘
+              ↓
+┌────────────────────────────┐
+│ Interfaces / Ports         │
+└─────────────┬──────────────┘
+              ↓
+┌────────────────────────────┐
+│ Infrastructure / Adapters  │
+└────────────────────────────┘
+```
+
+Avoid the reverse dependency where domain logic depends directly on provider SDKs.
+
+---
+
+# 78. Initial Provider Map
+
+```text
+Discovery
+  ↓
+Overture
+
+Search
+  ↓
+Tavily
+
+AI
+  ↓
+Selected free-tier AI provider
+
+Website intelligence
+  ↓
+Prospectra-owned analyzer
+
+Database
+  ↓
+Supabase PostgreSQL + PostGIS
+
+Authentication
+  ↓
+Supabase Auth
+
+Frontend hosting
+  ↓
+Vercel
+
+Backend / worker hosting
+  ↓
+Free/low-cost pilot host
+```
+
+Provider details are implementation/configuration concerns, not domain concepts.
+
+---
+
+# 79. Architectural Non-Goals
+
+Do not introduce these into MVP:
+
+```text
+microservices
+Redis dependency
+Kafka
+Kubernetes
+vector database
+Elasticsearch
+agent swarm
+autonomous SDR
+voice calling
+WhatsApp automation
+mass email
+CRM replacement
+large proprietary contact database
+paid enrichment as mandatory infrastructure
+predictive ML ranking
+mobile app
+multi-region deployment
+```
+
+These are outside the present architectural boundary.
+
+---
+
+# 80. First Vertical Slice
+
+The architecture should allow us to prove one complete path as early as possible:
+
+```text
+User
+ ↓
+Create ICP
+ ↓
+Run search
+ ↓
+Discover businesses
+ ↓
+Normalize
+ ↓
+Deduplicate
+ ↓
+Verify website
+ ↓
+Collect contact route
+ ↓
+Create evidence
+ ↓
+Qualify
+ ↓
+Score
+ ↓
+Display prospect
+```
+
+Every architectural component exists to support this core flow.
+
+---
+
+# 81. Architecture Acceptance Criteria
+
+We consider the MVP architecture ready for sprint decomposition when:
+
+```text
+✓ component boundaries are defined
+✓ data ownership is defined
+✓ provider boundaries are defined
+✓ job boundaries are defined
+✓ AI boundaries are defined
+✓ API/application/domain separation is defined
+✓ tenant/security boundaries are defined
+✓ failure/retry behavior is defined
+✓ search lifecycle is defined
+✓ prospect lifecycle is defined
+✓ evidence flow is defined
+✓ deployment shape is defined
+✓ cost-control strategy is defined
+✓ MVP exclusions are defined
+```
+
+---
+
+# 82. Architecture Decision Summary
+
+| Area                 | Decision                                     |
+| -------------------- | -------------------------------------------- |
+| Product              | Prospect intelligence platform               |
+| Architecture         | Modular monolith                             |
+| Frontend             | Next.js                                      |
+| Backend              | FastAPI                                      |
+| Database             | PostgreSQL + PostGIS                         |
+| Auth                 | Supabase Auth                                |
+| Jobs                 | PostgreSQL-backed                            |
+| Worker               | Separate worker runtime, same codebase       |
+| Discovery            | `DiscoveryProvider` → Overture initially     |
+| Search               | `SearchProvider` → Tavily initially          |
+| AI                   | `AIProvider` abstraction                     |
+| Website intelligence | Own deterministic analyzer                   |
+| Contact discovery    | Own/provider-adapter layer                   |
+| Evidence             | First-class entity                           |
+| Qualification        | Rules + validated AI where needed            |
+| Scoring              | Explainable deterministic scoring            |
+| Research             | Optional selected-prospect workflow          |
+| UI progress          | Polling initially                            |
+| Security             | RLS/AuthZ + SSRF + prompt-injection boundary |
+| Cost                 | Free-first funnel                            |
+| Deployment           | Small number of simple services/processes    |
+
+---
+
+# 83. Architecture Mental Model
+
+The complete mental model for Prospectra is:
+
+```text
+                 SALES INTENT
+                      │
+                      ▼
+                    ICP
+                      │
+                      ▼
+                DISCOVERY
+                      │
+                      ▼
+                 DATA QUALITY
+                      │
+                      ▼
+              DIGITAL INTELLIGENCE
+                      │
+                      ▼
+                   EVIDENCE
+                      │
+                      ▼
+             AI INTERPRETATION
+                      │
+                      ▼
+                QUALIFICATION
+                      │
+                      ▼
+                  SCORING
+                      │
+                      ▼
+              PRIORITIZED PROSPECT
+                      │
+                      ▼
+                 HUMAN REVIEW
+                      │
+                      ▼
+             OPTIONAL RESEARCH
+```
+
+The architecture is intentionally:
+
+**simple at the infrastructure level, strict at the domain level, selective with AI, and evidence-driven throughout.**
+
+---
+
+# 84. Next Step
+
+Do not generate implementation tasks directly from this document yet.
+
+The next planning artifact should be:
+
+**Prospectra — Architecture Dependency Map**
+
+That map will identify:
+
+```text
+what depends on what
+↓
+what must be built first
+↓
+what can be built in parallel
+↓
+what constitutes each vertical slice
+↓
+where verification gates belong
+```
+
+Only after that should we generate the complete sprint tree and Claude-sized implementation units.

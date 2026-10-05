@@ -1,0 +1,44 @@
+[project]
+name = "prospectra"
+version = "0.1.0"
+description = "Prospect Intelligence Platform"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi==0.142.2",
+    "pydantic-settings==2.15.0",
+    "sqlalchemy[asyncio]==2.1.3",
+    "psycopg[binary]==3.3.6",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.1.1",
+    "ruff==0.16.10",
+    "mypy==2.4.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+
+[tool.mypy]
+python_version = "3.14"
+mypy_path = "."
+explicit_package_bases = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disable_error_code = ["call-arg"]
+
+[tool.ruff]
+line-length = 100
+exclude = [".venv", ".git", "docs"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
