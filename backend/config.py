@@ -49,6 +49,15 @@ class Settings(BaseSettings):
     SUPABASE_JWT_SECRET: SecretStr | None = None  # Isolated legacy fallback only
     GEMINI_API_KEY: SecretStr | None = None
 
+    # AI Provider Configuration (Sprint 2 Free-First Architecture)
+    AI_PROVIDER: str = "openrouter"
+    AI_MODEL: str = "openrouter/free"
+    OPENROUTER_API_KEY: SecretStr | None = None
+    OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
+    OPENROUTER_TIMEOUT_SECONDS: float = 30.0
+    OPENROUTER_HTTP_REFERER: str | None = None
+    OPENROUTER_TITLE: str | None = None
+
     @field_validator("DATABASE_URL")
     @classmethod
     def _require_psycopg_scheme(cls, value: SecretStr) -> SecretStr:

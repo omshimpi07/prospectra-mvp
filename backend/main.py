@@ -8,7 +8,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 
-from backend.api import health_router, profiles_router, workspaces_router
+from backend.api import health_router, icps_router, profiles_router, workspaces_router
 from backend.config import get_settings
 from backend.database import dispose_engine
 from backend.middleware.errors import register_error_handlers
@@ -62,6 +62,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(profiles_router)
     app.include_router(workspaces_router)
+    app.include_router(icps_router)
 
     return app
 

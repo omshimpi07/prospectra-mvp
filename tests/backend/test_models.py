@@ -46,3 +46,27 @@ def test_workspace_member_model_instantiation():
     assert member.user_id == user_id
     assert member.role == "owner"
     assert WorkspaceMember.__tablename__ == "workspace_members"
+
+
+def test_icp_model_instantiation():
+    from backend.models.icp import ICP
+
+    icp_id = uuid4()
+    ws_id = uuid4()
+    user_id = uuid4()
+    icp = ICP(
+        id=icp_id,
+        workspace_id=ws_id,
+        created_by=user_id,
+        name="Pune Bakery Leads",
+        raw_prompt="Targeting bakeries in Pune",
+        status="DRAFT",
+        version=1,
+    )
+    assert icp.id == icp_id
+    assert icp.workspace_id == ws_id
+    assert icp.created_by == user_id
+    assert icp.name == "Pune Bakery Leads"
+    assert icp.status == "DRAFT"
+    assert icp.version == 1
+    assert ICP.__tablename__ == "icps"
