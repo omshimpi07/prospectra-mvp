@@ -3,7 +3,7 @@
 import logging
 from uuid import UUID, uuid4
 
-from sqlalchemy import select, update
+from sqlalchemy import case, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -16,8 +16,9 @@ from backend.providers.ai.base import AIProvider
 from backend.providers.web.extractors import extract_signals_from_page
 from backend.providers.web.fetcher import SecureWebFetcher
 from backend.schemas.icp import CompiledICPCriteria
-from backend.schemas.prospect import QualifyCandidatesResponse
+from backend.schemas.prospect import QualifyCandidatesResponse, RescoreResponse
 from backend.services.qualification import QualificationEngine
+from backend.services.scoring import ScoringEngine
 
 logger = logging.getLogger(__name__)
 
@@ -110,25 +111,90 @@ class ProspectService:
         db: AsyncSession,
         workspace_id: UUID,
         qualification_status: str | None = None,
+        min_score: float | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> list[Prospect]:
-        """List prospects in workspace with optional qualification status filter."""
+        """List prospects in workspace with deterministic score-first ranking and optional filters."""
         limit = min(max(1, limit), 100)
         offset = max(0, offset)
+
+        qual_rank = case(
+            (Prospect.qualification_status == "QUALIFIED", 1),
+            (Prospect.qualification_status == "REVIEW_NEEDED", 2),
+            (Prospect.qualification_status == "UNQUALIFIED", 3),
+            (Prospect.qualification_status == "DISQUALIFIED", 4),
+            else_=5,
+        )
 
         stmt = (
             select(Prospect)
             .where(Prospect.workspace_id == workspace_id)
-            .order_by(Prospect.created_at.desc())
+            .order_by(
+                Prospect.priority_score.desc().nulls_last(),
+                qual_rank.asc(),
+                Prospect.created_at.desc(),
+                Prospect.id.asc(),
+            )
             .limit(limit)
             .offset(offset)
         )
         if qualification_status:
             stmt = stmt.where(Prospect.qualification_status == qualification_status)
+        if min_score is not None:
+            stmt = stmt.where(Prospect.priority_score >= min_score)
 
         result = await db.execute(stmt)
         return list(result.scalars().all())
+
+    @staticmethod
+    async def rescore_workspace_prospects(
+        db: AsyncSession,
+        workspace_id: UUID,
+    ) -> RescoreResponse:
+        """Recompute opportunity scores for all prospects in the workspace based on their respective ICPs."""
+        stmt = select(Prospect).where(
+            Prospect.workspace_id == workspace_id,
+            Prospect.status.in_(["COMPLETED", "RESEARCHING", "QUEUED"]),
+        )
+        res = await db.execute(stmt)
+        prospects = list(res.scalars().all())
+
+        if not prospects:
+            return RescoreResponse(rescored_count=0, message="No prospects found to rescore.")
+
+        # Multi-ICP: Load all distinct ICPs in this workspace
+        distinct_icp_ids = list({p.icp_id for p in prospects})
+        icp_stmt = select(ICP).where(ICP.id.in_(distinct_icp_ids))
+        icp_res = await db.execute(icp_stmt)
+        icp_map = {
+            icp.id: CompiledICPCriteria.model_validate(icp.compiled_criteria)
+            for icp in icp_res.scalars().all()
+        }
+
+        now = utc_now()
+        for p in prospects:
+            icp_criteria = icp_map.get(p.icp_id)
+            if not icp_criteria:
+                continue
+            computed = ScoringEngine.calculate_score(
+                icp=icp_criteria,
+                signals=p.raw_signals or {},
+                canonical_category=p.canonical_category,
+                business_name=p.name,
+                qualification_status=p.qualification_status,
+            )
+            p.priority_score = computed.priority_score
+            p.score_breakdown = computed.to_breakdown_dict()
+            p.scoring_version = computed.scoring_version
+            p.scored_at = computed.scored_at
+            p.updated_at = now
+
+        await db.commit()
+        return RescoreResponse(
+            rescored_count=len(prospects),
+            message=f"Successfully re-scored {len(prospects)} prospect(s).",
+        )
 
     @staticmethod
     async def get_prospect_by_id(
@@ -370,11 +436,24 @@ class ProspectService:
                 ai_provider=ai_provider,
             )
 
-            # 6. Finalize Prospect
+            # 6. Deterministic Opportunity Scoring
+            computed_score = ScoringEngine.calculate_score(
+                icp=icp_criteria,
+                signals=signals,
+                canonical_category=prospect.canonical_category,
+                business_name=prospect.name,
+                qualification_status=outcome.status,
+            )
+
+            # 7. Finalize Prospect
             fin_now = utc_now()
             prospect.status = "COMPLETED"
             prospect.qualification_status = outcome.status
             prospect.fit_score = outcome.fit_score
+            prospect.priority_score = computed_score.priority_score
+            prospect.score_breakdown = computed_score.to_breakdown_dict()
+            prospect.scoring_version = computed_score.scoring_version
+            prospect.scored_at = computed_score.scored_at
             prospect.qualification_reason = rationale
             prospect.raw_signals = signals
             prospect.qualified_at = fin_now

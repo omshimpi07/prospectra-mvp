@@ -13,11 +13,15 @@ from backend.schemas.icp import (
 from backend.schemas.profile import ProfileResponse
 from backend.schemas.prospect import (
     EvidenceResponse,
+    FactorStatus,
     ProspectResponse,
     ProspectStatus,
     QualificationStatus,
     QualifyCandidatesRequest,
     QualifyCandidatesResponse,
+    RescoreResponse,
+    ScoreBreakdown,
+    ScoreFactor,
 )
 from backend.schemas.search import (
     GeoBoundingBox,
@@ -62,4 +66,8 @@ __all__ = [
     "QualifyCandidatesResponse",
     "ProspectStatus",
     "QualificationStatus",
+    "FactorStatus",
+    "ScoreFactor",
+    "ScoreBreakdown",
+    "RescoreResponse",
 ]

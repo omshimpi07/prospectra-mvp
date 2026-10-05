@@ -1,4 +1,4 @@
-"""Prospect intelligence and qualification endpoints."""
+"""Prospect intelligence, qualification, and scoring endpoints."""
 
 from uuid import UUID
 
@@ -14,6 +14,7 @@ from backend.schemas.prospect import (
     QualificationStatus,
     QualifyCandidatesRequest,
     QualifyCandidatesResponse,
+    RescoreResponse,
 )
 from backend.services.prospect import ProspectService
 
@@ -47,34 +48,57 @@ async def qualify_candidates(
     "",
     response_model=list[ProspectResponse],
     status_code=status.HTTP_200_OK,
-    summary="List workspace prospects with optional qualification status filter",
+    summary="List workspace prospects with score-first ranking and optional filters",
 )
 async def list_prospects(
     workspace_id: UUID,
     qualification_status: QualificationStatus | None = Query(
         default=None, description="Filter by qualification status"
     ),
+    min_score: float | None = Query(
+        default=None, ge=0.0, le=1.0, description="Minimum priority score filter"
+    ),
     limit: int = Query(default=50, ge=1, le=100, description="Max prospects to return"),
     offset: int = Query(default=0, ge=0, description="Pagination offset"),
     _member: WorkspaceMember = Depends(require_workspace_member()),
     db: AsyncSession = Depends(get_db),
 ) -> list[ProspectResponse]:
-    """Retrieve paginated prospects for the workspace."""
+    """Retrieve paginated prospects ranked deterministically by priority_score DESC."""
     prospects = await ProspectService.list_prospects(
         db=db,
         workspace_id=workspace_id,
         qualification_status=qualification_status,
+        min_score=min_score,
         limit=limit,
         offset=offset,
     )
     return [ProspectResponse.model_validate(p) for p in prospects]
 
 
+# Static route /rescore is explicitly placed BEFORE dynamic /{prospect_id} to avoid route collision
+@router.post(
+    "/rescore",
+    response_model=RescoreResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Recompute opportunity scores for all prospects in the workspace",
+)
+async def rescore_prospects(
+    workspace_id: UUID,
+    _member: WorkspaceMember = Depends(require_workspace_member()),
+    db: AsyncSession = Depends(get_db),
+) -> RescoreResponse:
+    """Re-evaluate opportunity scores and factor breakdowns across all workspace prospects."""
+    return await ProspectService.rescore_workspace_prospects(
+        db=db,
+        workspace_id=workspace_id,
+    )
+
+
 @router.get(
     "/{prospect_id}",
     response_model=ProspectResponse,
     status_code=status.HTTP_200_OK,
-    summary="Get single prospect details and qualification status",
+    summary="Get single prospect details, score breakdown, and qualification status",
 )
 async def get_prospect(
     workspace_id: UUID,
@@ -82,7 +106,7 @@ async def get_prospect(
     _member: WorkspaceMember = Depends(require_workspace_member()),
     db: AsyncSession = Depends(get_db),
 ) -> ProspectResponse:
-    """Retrieve detailed qualification facts and rationale for a single prospect."""
+    """Retrieve detailed qualification facts, score breakdown, and rationale for a single prospect."""
     prospect = await ProspectService.get_prospect_by_id(
         db=db,
         workspace_id=workspace_id,

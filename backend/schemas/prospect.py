@@ -1,4 +1,4 @@
-"""Pydantic schemas for Prospect and Qualification Evidence."""
+"""Pydantic schemas for Prospect, Qualification Evidence, and Scoring."""
 
 from datetime import datetime
 from typing import Any, Literal
@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 ProspectStatus = Literal["QUEUED", "RESEARCHING", "COMPLETED", "FAILED"]
 QualificationStatus = Literal["UNQUALIFIED", "QUALIFIED", "DISQUALIFIED", "REVIEW_NEEDED"]
+FactorStatus = Literal["matched", "unmatched", "unknown"]
 
 
 class QualifyCandidatesRequest(BaseModel):
@@ -46,6 +47,29 @@ class EvidenceResponse(BaseModel):
     created_at: datetime
 
 
+class ScoreFactor(BaseModel):
+    """Individual factor contributing to a prospect's opportunity score."""
+
+    key: str
+    label: str
+    impact: float
+    max_impact: float
+    status: FactorStatus
+    evidence_snippet: str | None = None
+
+
+class ScoreBreakdown(BaseModel):
+    """Auditable mathematical decomposition of a prospect's priority score."""
+
+    raw_score: float
+    status_multiplier: float
+    priority_score: float
+    scoring_profile: str
+    scoring_version: str = "v1.0"
+    scored_at: datetime
+    factors: list[ScoreFactor] = Field(default_factory=list)
+
+
 class ProspectResponse(BaseModel):
     """Canonical prospect entity within the workspace."""
 
@@ -63,6 +87,10 @@ class ProspectResponse(BaseModel):
     status: ProspectStatus
     qualification_status: QualificationStatus
     fit_score: float
+    priority_score: float = 0.0
+    score_breakdown: dict[str, Any] = Field(default_factory=dict)
+    scoring_version: str = "v1.0"
+    scored_at: datetime | None = None
     qualification_reason: str | None = None
     raw_signals: dict[str, Any] = Field(default_factory=dict)
     error_code: str | None = None
@@ -77,3 +105,25 @@ class ProspectResponse(BaseModel):
     @classmethod
     def _default_raw_signals(cls, v: Any) -> dict[str, Any]:
         return v if isinstance(v, dict) else {}
+
+    @field_validator("score_breakdown", mode="before")
+    @classmethod
+    def _default_score_breakdown(cls, v: Any) -> dict[str, Any]:
+        return v if isinstance(v, dict) else {}
+
+    @field_validator("priority_score", mode="before")
+    @classmethod
+    def _default_priority_score(cls, v: Any) -> float:
+        return float(v) if v is not None else 0.0
+
+    @field_validator("scoring_version", mode="before")
+    @classmethod
+    def _default_scoring_version(cls, v: Any) -> str:
+        return str(v) if v is not None else "v1.0"
+
+
+class RescoreResponse(BaseModel):
+    """Response returned upon completing workspace re-scoring."""
+
+    rescored_count: int = Field(..., description="Number of prospects re-scored.")
+    message: str = Field(..., description="Summary message.")

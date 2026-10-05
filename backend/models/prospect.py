@@ -38,6 +38,10 @@ class Prospect(Base, TimestampMixin):
             "qualification_status IN ('UNQUALIFIED', 'QUALIFIED', 'DISQUALIFIED', 'REVIEW_NEEDED')",
             name="chk_qualification_status",
         ),
+        CheckConstraint(
+            "priority_score >= 0.0 AND priority_score <= 1.0",
+            name="chk_prospect_priority_score",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -70,6 +74,10 @@ class Prospect(Base, TimestampMixin):
         String(50), nullable=False, default="UNQUALIFIED", index=True
     )
     fit_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    priority_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0, index=True)
+    score_breakdown: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    scoring_version: Mapped[str] = mapped_column(String(50), nullable=False, default="v1.0")
+    scored_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     qualification_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     raw_signals: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
 
