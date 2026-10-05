@@ -70,3 +70,40 @@ def test_icp_model_instantiation():
     assert icp.status == "DRAFT"
     assert icp.version == 1
     assert ICP.__tablename__ == "icps"
+
+
+def test_search_and_result_models_instantiation():
+    from backend.models.search import Search, SearchResult
+
+    search_id = uuid4()
+    ws_id = uuid4()
+    icp_id = uuid4()
+    user_id = uuid4()
+
+    search = Search(
+        id=search_id,
+        workspace_id=ws_id,
+        icp_id=icp_id,
+        created_by=user_id,
+        status="CREATED",
+        specification={"city": "Pune"},
+    )
+    assert search.id == search_id
+    assert search.status == "CREATED"
+    assert Search.__tablename__ == "searches"
+
+    res_id = uuid4()
+    result = SearchResult(
+        id=res_id,
+        search_id=search_id,
+        workspace_id=ws_id,
+        external_id="ext-123",
+        provider="overture",
+        name="Blue Tokai Coffee",
+        canonical_category="cafe",
+        latitude=18.5362,
+        longitude=73.8941,
+    )
+    assert result.id == res_id
+    assert result.external_id == "ext-123"
+    assert SearchResult.__tablename__ == "search_results"

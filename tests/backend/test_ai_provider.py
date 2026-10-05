@@ -182,7 +182,9 @@ async def test_openrouter_adapter_rate_limit_429():
     mock_response = MagicMock(spec=httpx.Response)
     mock_response.status_code = 429
     mock_response.text = "Rate limit reached"
-    error = httpx.HTTPStatusError("429 Too Many Requests", request=MagicMock(), response=mock_response)
+    error = httpx.HTTPStatusError(
+        "429 Too Many Requests", request=MagicMock(), response=mock_response
+    )
     mock_client.post.side_effect = error
 
     adapter = OpenRouterAIAdapter(api_key=SecretStr("key"), client=mock_client)

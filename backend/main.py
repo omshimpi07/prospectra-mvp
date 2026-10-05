@@ -8,7 +8,13 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 
-from backend.api import health_router, icps_router, profiles_router, workspaces_router
+from backend.api import (
+    health_router,
+    icps_router,
+    profiles_router,
+    searches_router,
+    workspaces_router,
+)
 from backend.config import get_settings
 from backend.database import dispose_engine
 from backend.middleware.errors import register_error_handlers
@@ -28,7 +34,29 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan manager."""
+    settings = get_settings()
+    worker = None
+    if settings.ENVIRONMENT != "testing" and settings.DATABASE_URL:
+        try:
+            from backend.database import get_session_factory
+            from backend.providers.discovery import get_discovery_provider
+            from backend.services.search_worker import SearchWorker
+
+            provider = get_discovery_provider(settings)
+            worker = SearchWorker(
+                session_factory=get_session_factory(),
+                discovery_provider=provider,
+                poll_interval_seconds=settings.SEARCH_WORKER_POLL_INTERVAL_SECONDS,
+                job_timeout_seconds=settings.SEARCH_JOB_TIMEOUT_SECONDS,
+            )
+            worker.start()
+        except Exception:
+            pass
+
     yield
+
+    if worker:
+        await worker.stop()
     await dispose_engine()
 
 
@@ -63,6 +91,7 @@ def create_app() -> FastAPI:
     app.include_router(profiles_router)
     app.include_router(workspaces_router)
     app.include_router(icps_router)
+    app.include_router(searches_router)
 
     return app
 

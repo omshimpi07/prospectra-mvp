@@ -156,9 +156,7 @@ def test_connection_check_success_runs_select_1(monkeypatch):
         OSError("network unreachable"),
     ],
 )
-def test_connection_check_failure_returns_false_without_leaking_details(
-    monkeypatch, caplog, error
-):
+def test_connection_check_failure_returns_false_without_leaking_details(monkeypatch, caplog, error):
     monkeypatch.setattr(database, "get_engine", lambda: FakeEngine(error=error))
 
     with caplog.at_level(logging.WARNING, logger="backend.database"):

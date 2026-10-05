@@ -11,6 +11,14 @@ from backend.schemas.icp import (
     TargetSignals,
 )
 from backend.schemas.profile import ProfileResponse
+from backend.schemas.search import (
+    GeoBoundingBox,
+    SearchCreate,
+    SearchResponse,
+    SearchResultResponse,
+    SearchSpecification,
+    SearchStatus,
+)
 from backend.schemas.workspace import (
     WorkspaceCreate,
     WorkspaceMemberResponse,
@@ -34,4 +42,10 @@ __all__ = [
     "ICPUpdate",
     "ICPResponse",
     "ICPStatus",
+    "GeoBoundingBox",
+    "SearchSpecification",
+    "SearchStatus",
+    "SearchCreate",
+    "SearchResponse",
+    "SearchResultResponse",
 ]

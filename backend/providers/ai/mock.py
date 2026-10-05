@@ -27,7 +27,9 @@ def get_default_mock_criteria(
             keywords=["specialty coffee", "artisan bakery"],
             negative_keywords=["fast food chain"],
         ),
-        qualification_notes=["Targets independent food & beverage businesses without an online presence."],
+        qualification_notes=[
+            "Targets independent food & beverage businesses without an online presence."
+        ],
     )
 
 

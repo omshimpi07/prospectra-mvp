@@ -92,11 +92,15 @@ class SupabaseJWTVerifier:
             # Validate that sub is a valid UUID
             sub = payload.get("sub")
             if not sub:
-                raise AppError("INVALID_TOKEN", "Token payload missing 'sub' claim", status_code=401)
+                raise AppError(
+                    "INVALID_TOKEN", "Token payload missing 'sub' claim", status_code=401
+                )
             try:
                 UUID(str(sub))
             except ValueError:
-                raise AppError("INVALID_TOKEN", "Token 'sub' claim is not a valid UUID", status_code=401)
+                raise AppError(
+                    "INVALID_TOKEN", "Token 'sub' claim is not a valid UUID", status_code=401
+                )
 
             return payload
 
@@ -120,5 +124,9 @@ class SupabaseJWTVerifier:
 def get_jwt_verifier() -> SupabaseJWTVerifier:
     """Return process-wide JWT verifier."""
     settings = get_settings()
-    jwks_url = f"{settings.SUPABASE_URL.rstrip('/')}/auth/v1/.well-known/jwks.json" if settings.SUPABASE_URL else None
+    jwks_url = (
+        f"{settings.SUPABASE_URL.rstrip('/')}/auth/v1/.well-known/jwks.json"
+        if settings.SUPABASE_URL
+        else None
+    )
     return SupabaseJWTVerifier(jwks_url=jwks_url)

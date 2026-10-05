@@ -18,10 +18,14 @@ from backend.config import Settings
 @pytest.fixture(scope="session")
 def rsa_keypair() -> tuple[rsa.RSAPrivateKey, str]:
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    public_pem = private_key.public_key().public_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PublicFormat.SubjectPublicKeyInfo,
-    ).decode("utf-8")
+    public_pem = (
+        private_key.public_key()
+        .public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+        .decode("utf-8")
+    )
     return private_key, public_pem
 
 
@@ -69,7 +73,9 @@ def make_token(rsa_keypair, test_settings):
 @pytest.fixture
 def mock_verifier(rsa_keypair, test_settings):
     _, public_pem = rsa_keypair
-    verifier = SupabaseJWTVerifier(jwks_url=f"{test_settings.SUPABASE_URL}/auth/v1/.well-known/jwks.json")
+    verifier = SupabaseJWTVerifier(
+        jwks_url=f"{test_settings.SUPABASE_URL}/auth/v1/.well-known/jwks.json"
+    )
 
     mock_key = MagicMock()
     mock_key.key = public_pem

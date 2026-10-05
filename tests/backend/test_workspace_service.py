@@ -39,8 +39,12 @@ def test_create_workspace_service():
 def test_get_user_workspaces_service():
     user_id = uuid4()
     now = utc_now()
-    ws1 = Workspace(id=uuid4(), name="WS1", slug="ws1", created_by=user_id, created_at=now, updated_at=now)
-    ws2 = Workspace(id=uuid4(), name="WS2", slug="ws2", created_by=user_id, created_at=now, updated_at=now)
+    ws1 = Workspace(
+        id=uuid4(), name="WS1", slug="ws1", created_by=user_id, created_at=now, updated_at=now
+    )
+    ws2 = Workspace(
+        id=uuid4(), name="WS2", slug="ws2", created_by=user_id, created_at=now, updated_at=now
+    )
 
     mock_db = AsyncMock()
     mock_res = MagicMock()
@@ -60,7 +64,9 @@ def test_get_workspace_members_service():
     ws_id = uuid4()
     user_id = uuid4()
     now = utc_now()
-    member = WorkspaceMember(id=uuid4(), workspace_id=ws_id, user_id=user_id, role="owner", joined_at=now)
+    member = WorkspaceMember(
+        id=uuid4(), workspace_id=ws_id, user_id=user_id, role="owner", joined_at=now
+    )
 
     mock_db = AsyncMock()
     mock_res = MagicMock()

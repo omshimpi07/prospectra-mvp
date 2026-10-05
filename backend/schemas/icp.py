@@ -17,18 +17,25 @@ class LocationCriteria(BaseModel):
     """
 
     city: str = Field(..., min_length=1, description="Target city name.")
-    state_province: str | None = Field(default=None, description="State, province, or region if specified.")
+    state_province: str | None = Field(
+        default=None, description="State, province, or region if specified."
+    )
     country: str | None = Field(default=None, description="Country code or name if specified.")
-    radius_km: float | None = Field(default=None, ge=1.0, le=500.0, description="Target radius in km.")
+    radius_km: float | None = Field(
+        default=None, ge=1.0, le=500.0, description="Target radius in km."
+    )
 
 
 class TargetSignals(BaseModel):
     """Signals used for qualifying or filtering target businesses."""
 
     has_website: bool | None = Field(
-        default=None, description="Filter by presence (true) or absence (false) of website, or any (None)."
+        default=None,
+        description="Filter by presence (true) or absence (false) of website, or any (None).",
     )
-    min_rating: float | None = Field(default=None, ge=1.0, le=5.0, description="Minimum customer rating.")
+    min_rating: float | None = Field(
+        default=None, ge=1.0, le=5.0, description="Minimum customer rating."
+    )
     keywords: list[str] = Field(default_factory=list, description="Keywords to match in listings.")
     negative_keywords: list[str] = Field(
         default_factory=list, description="Keywords to exclude from listings."
@@ -38,7 +45,9 @@ class TargetSignals(BaseModel):
 class CompiledICPCriteria(BaseModel):
     """Validated structured specification extracted from seller's natural language input."""
 
-    service_offering: str = Field(..., min_length=1, description="Normalized seller service offering.")
+    service_offering: str = Field(
+        ..., min_length=1, description="Normalized seller service offering."
+    )
     target_categories: list[str] = Field(
         ..., min_length=1, description="List of validated canonical business categories."
     )

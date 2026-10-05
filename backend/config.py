@@ -58,6 +58,17 @@ class Settings(BaseSettings):
     OPENROUTER_HTTP_REFERER: str | None = None
     OPENROUTER_TITLE: str | None = None
 
+    # Search & Discovery Configuration (Sprint 3 Overture + DuckDB Architecture)
+    DISCOVERY_PROVIDER: str = "overture"  # 'overture' or 'mock'
+    OVERTURE_S3_BUCKET: str = "overturemaps-us-west-2"
+    OVERTURE_STAC_URL: str = "https://stac.overturemaps.org/catalog.json"
+    OVERTURE_RELEASE: str | None = None  # None = dynamic resolution from STAC catalog
+    OVERTURE_QUERY_TIMEOUT_SECONDS: float = 60.0
+    SEARCH_DEFAULT_RADIUS_KM: float = 25.0
+    SEARCH_MAX_LIMIT: int = 500
+    SEARCH_WORKER_POLL_INTERVAL_SECONDS: float = 2.0
+    SEARCH_JOB_TIMEOUT_SECONDS: float = 300.0
+
     @field_validator("DATABASE_URL")
     @classmethod
     def _require_psycopg_scheme(cls, value: SecretStr) -> SecretStr:
