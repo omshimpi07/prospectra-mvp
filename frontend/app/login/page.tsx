@@ -1,33 +1,55 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { Sparkles, Loader2, AlertCircle } from "lucide-react";
+import { Sparkles, Loader2, AlertCircle, MailCheck } from "lucide-react";
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isSignUp, setIsSignUp] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [resending, setResending] = useState(false);
+  const [showResend, setShowResend] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    const errorParam = searchParams.get("error");
+    const messageParam = searchParams.get("message");
+    if (errorParam) {
+      setError(errorParam);
+      if (errorParam.toLowerCase().includes("email not confirmed") || errorParam.toLowerCase().includes("expired")) {
+        setShowResend(true);
+      }
+    }
+    if (messageParam) {
+      setMessage(messageParam);
+    }
+  }, [searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
     setMessage(null);
+    setShowResend(false);
 
     try {
       if (isSignUp) {
+        const redirectUrl = `${window.location.origin}/auth/callback`;
         const { error } = await supabase.auth.signUp({
           email,
           password,
+          options: {
+            emailRedirectTo: redirectUrl,
+          },
         });
         if (error) throw error;
-        setMessage("Account created. Check your email or sign in directly.");
+        setMessage("Account created. Please check your email to confirm your account before signing in.");
         setIsSignUp(false);
       } else {
         const { error } = await supabase.auth.signInWithPassword({
@@ -38,9 +60,38 @@ export default function LoginPage() {
         router.push("/");
       }
     } catch (err: any) {
-      setError(err.message || "Authentication failed");
+      const errMsg = err.message || "Authentication failed";
+      setError(errMsg);
+      if (errMsg.toLowerCase().includes("email not confirmed")) {
+        setShowResend(true);
+      }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResendConfirmation = async () => {
+    if (!email.trim()) {
+      setError("Please enter your email address to resend confirmation.");
+      return;
+    }
+    setResending(true);
+    try {
+      const redirectUrl = `${window.location.origin}/auth/callback`;
+      const { error } = await supabase.auth.resend({
+        type: "signup",
+        email: email.trim(),
+        options: {
+          emailRedirectTo: redirectUrl,
+        },
+      });
+      if (error) throw error;
+      setMessage("Confirmation email resent. Please check your inbox and spam folder.");
+      setShowResend(false);
+    } catch (resendErr: any) {
+      setError(resendErr.message || "Failed to resend confirmation email.");
+    } finally {
+      setResending(false);
     }
   };
 
@@ -64,9 +115,28 @@ export default function LoginPage() {
         </p>
 
         {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2 text-xs text-red-700">
-            <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-            <span>{error}</span>
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+              <span>{error}</span>
+            </div>
+            {showResend && (
+              <div className="mt-2 pt-2 border-t border-red-200">
+                <button
+                  type="button"
+                  onClick={handleResendConfirmation}
+                  disabled={resending}
+                  className="inline-flex items-center gap-1.5 font-semibold text-blue-700 hover:text-blue-900 transition underline disabled:opacity-50"
+                >
+                  {resending ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <MailCheck className="h-3.5 w-3.5" />
+                  )}
+                  <span>Resend confirmation email</span>
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -116,6 +186,7 @@ export default function LoginPage() {
             onClick={() => {
               setIsSignUp(!isSignUp);
               setError(null);
+              setShowResend(false);
             }}
             className="text-xs text-blue-600 hover:underline"
           >
@@ -124,5 +195,19 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+        </div>
+      }
+    >
+      <LoginForm />
+    </Suspense>
   );
 }

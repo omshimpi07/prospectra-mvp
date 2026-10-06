@@ -17,8 +17,31 @@ export default function RootPage() {
   const [creatingWs, setCreatingWs] = useState(false);
 
   useEffect(() => {
+    // 1. Guard against destroying auth hash or query tokens:
+    // If arriving with auth callback parameters (hash or query), forward immediately to /auth/callback
+    if (typeof window !== "undefined") {
+      const hash = window.location.hash || "";
+      const search = window.location.search || "";
+      if (
+        hash.includes("access_token") ||
+        hash.includes("error") ||
+        search.includes("code=") ||
+        search.includes("error=")
+      ) {
+        router.replace(`/auth/callback${search}${hash}`);
+        return;
+      }
+    }
+
+    let isMounted = true;
+
     async function init() {
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!isMounted) return;
+
       if (!session) {
         router.push("/login");
         return;
@@ -26,6 +49,7 @@ export default function RootPage() {
 
       try {
         const wsList = await fetchWorkspaces();
+        if (!isMounted) return;
         setWorkspaces(wsList);
         if (wsList.length > 0) {
           // Minimal entry: automatically redirect to the first workspace's prospects queue
@@ -34,11 +58,17 @@ export default function RootPage() {
           setLoading(false);
         }
       } catch (err: any) {
+        if (!isMounted) return;
         setError(err.message || "Failed to load workspaces");
         setLoading(false);
       }
     }
+
     init();
+
+    return () => {
+      isMounted = false;
+    };
   }, [router]);
 
   const handleCreateWorkspace = async (e: React.FormEvent) => {
